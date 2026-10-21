@@ -294,6 +294,72 @@ cmd_restart() {
   compose "$svc" restart
 }
 
+cmd_update() {
+  local target=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --version)
+        [[ $# -ge 2 ]] || die "--version requires a value"
+        target="$2"
+        shift 2
+        ;;
+      *)
+        die "unknown update option: $1"
+        ;;
+    esac
+  done
+
+  git -C "$ROOT" diff --quiet || die "tracked files are modified; commit or stash first"
+  git -C "$ROOT" diff --cached --quiet || die "staged changes present; commit or stash first"
+
+  local previous
+  previous="$(git -C "$ROOT" describe --tags --always)"
+  git -C "$ROOT" fetch --tags --prune
+
+  if [[ -z "$target" ]]; then
+    target="$(git -C "$ROOT" tag -l 'v*' --sort=-v:refname | head -n1)"
+  fi
+  [[ -n "$target" ]] || die "no release tag found"
+
+  git -C "$ROOT" checkout "$target"
+  info "updating from $previous to $target"
+  cmd_up
+}
+
+read_env_value() {
+  local key="$1"
+  local default="$2"
+  local value
+
+  value="$(grep -E "^${key}=" "$ROOT/.env" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  printf '%s' "${value:-$default}"
+}
+
+cmd_doctor() {
+  local base_domain="unset"
+  local data_root="/"
+  local dir
+
+  if [[ -f "$ROOT/.env" ]]; then
+    base_domain="$(read_env_value BASE_DOMAIN unset)"
+    data_root="$(read_env_value DATA_ROOT /)"
+  fi
+
+  info "repo: $ROOT"
+  info "base domain: $base_domain"
+  "$DOCKER_BIN" --version || true
+  "$DOCKER_BIN" compose version || true
+  git --version || true
+  df -h "$data_root" || true
+
+  for dir in "$ROOT"/*/; do
+    [[ -f "$dir/.secrets" ]] || continue
+    info "$(basename "$dir") secret keys:"
+    sed -n 's/=.*//p' "$dir/.secrets" | sed 's/^/  /'
+  done
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage: ./stack <command>
@@ -306,6 +372,8 @@ Commands:
   status               Show container status
   logs <service>       Follow logs for a service
   restart <service>    Restart a service
+  update [--version v] Check out a release tag and redeploy
+  doctor               Print redacted diagnostics
 EOF
 }
 
@@ -320,6 +388,8 @@ main() {
     status) cmd_status "$@";;
     logs) cmd_logs "$@";;
     restart) cmd_restart "$@";;
+    update) cmd_update "$@";;
+    doctor) cmd_doctor "$@";;
     init) cmd_init "$@";;
     help|-h|--help) cmd_help;;
     *) die "unknown command: $cmd (try ./stack help)";;
