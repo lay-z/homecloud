@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
+
+die() {
+  printf 'stack: %s\n' "$*" >&2
+  exit 1
+}
+
+info() {
+  printf '%s\n' "$*"
+}
+
+load_env() {
+  # shellcheck disable=SC1091
+  set -a
+  . "$ROOT/.env"
+  set +a
+}
+
+enabled_services() {
+  local raw="${ENABLED_SERVICES// /}"
+  local -a services
+  local svc
+
+  IFS=',' read -ra services <<< "$raw"
+  for svc in "${services[@]}"; do
+    if [[ -n "$svc" ]]; then
+      printf '%s\n' "$svc"
+    fi
+  done
+}
+
+generate_service_secrets() {
+  local dir="$1"
+  local example="$dir/.secrets.example"
+  local target="$dir/.secrets"
+  local old_umask line key
+
+  [[ -f "$example" ]] || return 0
+
+  if [[ ! -f "$target" ]]; then
+    old_umask="$(umask)"
+    umask 077
+    : > "$target"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" =~ ^[[:space:]]*# ]]; then
+        continue
+      fi
+      [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
+      key="${BASH_REMATCH[1]}"
+      printf '%s=%s\n' "$key" "$(openssl rand -hex 32)" >> "$target"
+    done < "$example"
+
+    umask "$old_umask"
+  fi
+
+  chmod 600 "$target"
+}
+
+cmd_init() {
+  local created_env=0
+  local dir svc
+
+  if [[ ! -f "$ROOT/.env" ]]; then
+    cp "$ROOT/.env.example" "$ROOT/.env"
+    created_env=1
+  fi
+
+  for dir in "$ROOT"/*/; do
+    [[ -f "$dir/.env.example" ]] || continue
+    if [[ ! -f "$dir/.env" ]]; then
+      cp "$dir/.env.example" "$dir/.env"
+    fi
+    generate_service_secrets "$dir"
+  done
+
+  if (( created_env )); then
+    info "created .env"
+    info "edit BASE_DOMAIN, ACME_EMAIL, DATA_ROOT, and ENABLED_SERVICES, then rerun ./stack init"
+    return 0
+  fi
+
+  load_env
+
+  mkdir -p "$DATA_ROOT/traefik"
+
+  if [[ ! -f "$DATA_ROOT/traefik/acme.json" ]]; then
+    : > "$DATA_ROOT/traefik/acme.json"
+    chmod 600 "$DATA_ROOT/traefik/acme.json"
+  fi
+
+  while IFS= read -r svc; do
+    [[ -n "$svc" ]] || continue
+    case "$svc" in
+      jellyfin)
+        mkdir -p "$DATA_ROOT/jellyfin/config" "$DATA_ROOT/jellyfin/cache"
+        ;;
+      *)
+        mkdir -p "$DATA_ROOT/$svc"
+        ;;
+    esac
+  done <<< "$(enabled_services)"
+
+  info "initialized $BASE_DOMAIN"
+  info "required DNS: *.${BASE_DOMAIN} -> this host"
+}
+
+cmd_help() {
+  cat <<'EOF'
+Usage: ./stack <command>
+
+Commands:
+  init                 Create env files and required directories
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+
+  case "$cmd" in
+    init) cmd_init "$@";;
+    help|-h|--help) cmd_help;;
+    *) die "unknown command: $cmd (try ./stack help)";;
+  esac
+}
+
+main "$@"
