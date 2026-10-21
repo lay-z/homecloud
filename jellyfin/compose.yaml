@@ -1,0 +1,30 @@
+name: jellyfin
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:10.10.7
+    container_name: jellyfin
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file:
+      - .env
+      - .secrets
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      - ${DATA_ROOT}/jellyfin/config:/config
+      - ${DATA_ROOT}/jellyfin/cache:/cache
+      - ${JELLYFIN_MEDIA_PATH}:/media
+    environment:
+      JELLYFIN_PublishedServerUrl: https://flix.${BASE_DOMAIN}
+      TZ: ${TZ}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.flix.rule=Host(`flix.${BASE_DOMAIN}`)
+      - traefik.http.routers.flix.entrypoints=websecure
+      - traefik.http.routers.flix.tls.certresolver=le
+      - traefik.http.routers.flix.middlewares=jellyfin-headers,jellyfin-buffering
+      - traefik.http.services.flix.loadbalancer.server.url=http://127.0.0.1:8096
+      - traefik.http.middlewares.jellyfin-headers.headers.customresponseheaders.X-Content-Type-Options=nosniff
+      - "traefik.http.middlewares.jellyfin-headers.headers.customresponseheaders.Content-Security-Policy=default-src https: data: blob: ; img-src 'self' https://* ; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.youtube.com blob:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; font-src 'self'"
+      - traefik.http.middlewares.jellyfin-buffering.buffering.maxRequestBodyBytes=20971520
