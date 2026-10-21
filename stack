@@ -20,6 +20,78 @@ load_env() {
   set +a
 }
 
+require_file() {
+  [[ -f "$ROOT/$1" ]] || die "missing $1"
+}
+
+valid_domain() {
+  [[ "$1" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]]
+}
+
+check_reserved() {
+  local file="$1"
+  if grep -Eq '^(BASE_DOMAIN|ACME_EMAIL|DATA_ROOT|ENABLED_SERVICES)=' "$file"; then
+    die "reserved instance key in ${file#"$ROOT"/}"
+  fi
+}
+
+check_service_secrets() {
+  local dir="$1"
+  local example="$dir/.secrets.example"
+  local target="$dir/.secrets"
+  local line key value
+
+  [[ -f "$example" ]] || return 0
+  [[ -f "$target" ]] || die "missing ${target#"$ROOT"/}"
+  [[ "$(stat -c %a "$target")" == "600" ]] || die "${target#"$ROOT"/} must be mode 600"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+    [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
+    key="${BASH_REMATCH[1]}"
+    value="$(grep -E "^${key}=" "$target" | tail -n1 | cut -d= -f2- || true)"
+    [[ -n "$value" ]] || die "empty secret $key in ${target#"$ROOT"/}"
+  done < "$example"
+}
+
+compose() {
+  local service="$1"
+  shift
+  local dir="$ROOT/$service"
+  local args=(-f "$dir/compose.yaml")
+  local env_args=(--env-file "$ROOT/.env")
+
+  [[ -d "$dir" ]] || die "unknown service: $service"
+
+  if [[ -f "$dir/compose.override.yaml" ]]; then
+    args+=(-f "$dir/compose.override.yaml")
+  fi
+  if [[ -f "$dir/.env" ]]; then
+    env_args+=(--env-file "$dir/.env")
+  fi
+  if [[ -f "$dir/.secrets" ]]; then
+    env_args+=(--env-file "$dir/.secrets")
+  fi
+
+  (
+    cd "$dir"
+    "$DOCKER_BIN" compose "${env_args[@]}" "${args[@]}" "$@"
+  )
+}
+
+check_data_safety() {
+  local service="$1"
+  local rendered
+
+  rendered="$(compose "$service" config --format json)"
+
+  if grep -Eq '"type"[[:space:]]*:[[:space:]]*"volume"' <<< "$rendered"; then
+    die "$service uses a named or anonymous volume; use a bind mount under DATA_ROOT"
+  fi
+}
+
 enabled_services() {
   local raw="${ENABLED_SERVICES// /}"
   local -a services
@@ -109,6 +181,55 @@ cmd_init() {
   info "required DNS: *.${BASE_DOMAIN} -> this host"
 }
 
+cmd_check() {
+  require_file ".env"
+  load_env
+
+  [[ -n "${BASE_DOMAIN:-}" ]] || die "BASE_DOMAIN is required"
+  [[ -n "${ACME_EMAIL:-}" ]] || die "ACME_EMAIL is required"
+  [[ -n "${DATA_ROOT:-}" ]] || die "DATA_ROOT is required"
+  [[ -n "${ENABLED_SERVICES:-}" ]] || die "ENABLED_SERVICES is required"
+
+  valid_domain "$BASE_DOMAIN" || die "BASE_DOMAIN must be a bare domain: $BASE_DOMAIN"
+  [[ "$ACME_EMAIL" == *@*.* ]] || die "ACME_EMAIL is not valid: $ACME_EMAIL"
+  [[ "$DATA_ROOT" == /* ]] || die "DATA_ROOT must be absolute: $DATA_ROOT"
+  [[ -d "$DATA_ROOT" ]] || die "DATA_ROOT does not exist: $DATA_ROOT"
+  [[ -f "$DATA_ROOT/traefik/acme.json" ]] || die "missing $DATA_ROOT/traefik/acme.json (run ./stack init)"
+
+  local services svc dir
+  services="$(enabled_services)"
+  [[ -n "$services" ]] || die "ENABLED_SERVICES is empty"
+
+  while IFS= read -r svc; do
+    [[ -n "$svc" ]] || continue
+    dir="$ROOT/$svc"
+    [[ -d "$dir" ]] || die "unknown service: $svc"
+    [[ -f "$dir/compose.yaml" ]] || die "missing $svc/compose.yaml"
+    [[ -f "$dir/.env" ]] || die "missing $svc/.env"
+    [[ -d "$DATA_ROOT/$svc" ]] || die "missing data directory: $DATA_ROOT/$svc"
+
+    check_reserved "$dir/.env"
+    if [[ -f "$dir/.secrets" ]]; then
+      check_reserved "$dir/.secrets"
+    fi
+    check_service_secrets "$dir"
+    compose "$svc" config -q
+    check_data_safety "$svc"
+  done <<< "$services"
+
+  compose traefik config -q
+  check_data_safety traefik
+
+  local file
+  while IFS= read -r file; do
+    if grep -n "$BASE_DOMAIN" "$file" >/dev/null 2>&1; then
+      die "found hardcoded base domain in ${file#"$ROOT"/}"
+    fi
+  done < <(find "$ROOT" -maxdepth 2 -type f \( -name 'compose.yaml' -o -name 'stack' \) ! -path '*/.git/*')
+
+  info "check passed for $BASE_DOMAIN"
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage: ./stack <command>
@@ -123,6 +244,7 @@ main() {
   shift || true
 
   case "$cmd" in
+    check) cmd_check "$@";;
     init) cmd_init "$@";;
     help|-h|--help) cmd_help;;
     *) die "unknown command: $cmd (try ./stack help)";;
