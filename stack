@@ -230,12 +230,82 @@ cmd_check() {
   info "check passed for $BASE_DOMAIN"
 }
 
+cmd_up() {
+  cmd_check
+  load_env
+
+  compose traefik up -d --remove-orphans
+
+  local svc
+  while IFS= read -r svc; do
+    [[ -n "$svc" ]] || continue
+    info "starting $svc"
+    compose "$svc" up -d --remove-orphans
+  done <<< "$(enabled_services)"
+
+  info "done"
+}
+
+cmd_down() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -v|--volumes)
+        die "refusing to remove volumes; persistent data lives under DATA_ROOT"
+        ;;
+      *)
+        die "unknown down option: $1"
+        ;;
+    esac
+  done
+
+  load_env
+
+  local svc
+  while IFS= read -r svc; do
+    [[ -n "$svc" ]] || continue
+    compose "$svc" down
+  done <<< "$(enabled_services)"
+
+  compose traefik down
+}
+
+cmd_status() {
+  load_env
+  compose traefik ps
+
+  local svc
+  while IFS= read -r svc; do
+    [[ -n "$svc" ]] || continue
+    compose "$svc" ps
+  done <<< "$(enabled_services)"
+}
+
+cmd_logs() {
+  local svc="${1:-}"
+  [[ -n "$svc" ]] || die "usage: ./stack logs <service>"
+  [[ -d "$ROOT/$svc" ]] || die "unknown service: $svc"
+  compose "$svc" logs -f --tail=100
+}
+
+cmd_restart() {
+  local svc="${1:-}"
+  [[ -n "$svc" ]] || die "usage: ./stack restart <service>"
+  [[ -d "$ROOT/$svc" ]] || die "unknown service: $svc"
+  compose "$svc" restart
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage: ./stack <command>
 
 Commands:
   init                 Create env files and required directories
+  check                Validate env files and compose configuration
+  up                   Start Traefik and enabled services
+  down                 Stop enabled services and Traefik (keeps data)
+  status               Show container status
+  logs <service>       Follow logs for a service
+  restart <service>    Restart a service
 EOF
 }
 
@@ -245,6 +315,11 @@ main() {
 
   case "$cmd" in
     check) cmd_check "$@";;
+    up) cmd_up "$@";;
+    down) cmd_down "$@";;
+    status) cmd_status "$@";;
+    logs) cmd_logs "$@";;
+    restart) cmd_restart "$@";;
     init) cmd_init "$@";;
     help|-h|--help) cmd_help;;
     *) die "unknown command: $cmd (try ./stack help)";;
