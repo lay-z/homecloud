@@ -1,59 +1,43 @@
-# priyav.dev infrastructure
+# homelab-stack
 
-This repo holds DNS tooling for `priyav.dev`; the server context below is here so
-future sessions can work on the box without rediscovering it.
+This repo is the source of truth for the Docker Compose stack. `stack` is the
+operator interface; Traefik provides ingress and certificates from container
+labels.
 
-## Access
+## Commands
 
-- SSH: `ssh homeserver` (alias for `flix.priyav.dev`, user `layz`).
-- Everything runs in Docker. Per-service stacks live in `~/<service>/` with a
-  `docker-compose.yml` (e.g. `~/jellyfin`, `~/immich`, `~/tandoor`, `~/authentik`,
-  `~/papra`, `~/checkmate`).
-- Reverse proxy: container `examples-nginx-1`, image `jonasal/nginx-certbot`,
-  `network_mode: host`. Config and certs are bind-mounted from `~/nginx/examples/`.
+```bash
+./stack init
+./stack check
+./stack up
+./stack status
+./stack logs <service>
+./stack update
+./stack doctor
+```
 
-## DNS routing
+## Layout
 
-Two hosts, split at DNS using the Namecheap tool in this repo:
+- `<service>/compose.yaml`: service stack, explicit `name:`
+- `<service>/.env`: service values (gitignored)
+- `<service>/.secrets`: service secrets, mode 0600 (gitignored)
+- `<service>/compose.override.yaml`: host-specific overrides (gitignored)
+- root `.env`: instance values (gitignored)
+- `tools/dns/`: optional Namecheap tooling
 
-- Wildcard `*.priyav.dev` → server A (`212.132.249.106`), the Docker/nginx box.
-- `assets.priyav.dev` → server B (`2a01:4f8:1c1b:d23d::1`), a separate host running
-  Snipe-IT behind Caddy + Apache. It is NOT on `homeserver`.
-- More-specific records beat the wildcard; see `README.md` for the `set` pattern.
-- New subdomains on server A normally need no DNS change. Verify with
-  `dig +short <domain>` before touching Namecheap.
+Persistent data lives under `${DATA_ROOT}/<service>`, outside the repo. All
+persistent paths are bind mounts; do not introduce named or anonymous volumes.
+`stack check` rejects `type: volume`, and `stack down -v` is rejected.
 
-## Service map
+## Current phase
 
-All upstreams below are reached from nginx over `127.0.0.1:<port>` because the
-proxy uses the host network.
+Jellyfin is the first converted service. Other services and the nginx cutover
+are follow-on work. Do not stop nginx until every public host has a Traefik
+route.
 
-| Domain | Upstream / container | Notes |
-| --- | --- | --- |
-| `flix.priyav.dev` | `127.0.0.1:8096` / `jellyfin` | Jellyfin |
-| `photos.priyav.dev` | `127.0.0.1:2283` / `immich_server` | Immich |
-| `recipes.priyav.dev` | `127.0.0.1:8979` / `tandoor-web_recipes-1` | Tandoor (container port 80) |
-| `id.priyav.dev` | `127.0.0.1:9000` / `authentik-server-1` | Authentik (worker + postgresql in same compose) |
-| `docs.priyav.dev` | `127.0.0.1:1221` / `papra` | Papra |
-| `status.priyav.dev` | `127.0.0.1:52345` / `checkmate` | Checkmate admin UI |
-| `info.status.priyav.dev` | `127.0.0.1:52345` / `checkmate` | Checkmate public status page |
-| `assets.priyav.dev` | server B | Snipe-IT, not on this host |
+## Server notes
 
-## Nginx and certificates
-
-- Site configs: `~/nginx/examples/user_conf.d/*.conf` on `homeserver`.
-- Certs: `/etc/letsencrypt/live/<name>/` inside the container. `<name>` comes from
-  the `ssl_certificate` path in the site config, not necessarily the domain, so use
-  a sensible name like `live/info.status/`.
-- Certbot runs at container start. After adding or changing a site config, run
-  `docker restart examples-nginx-1` to trigger certificate issuance and the reload.
-- DNS must already point at the box before certbot runs (HTTP-01 via webroot).
-- Useful checks:
-  - `docker exec examples-nginx-1 ls -la /etc/letsencrypt/live/`
-  - `docker logs examples-nginx-1 --tail 50`
-  - `curl -sI https://<domain>/`
-
-## Secrets
-
-Never commit credentials. DNS creds live in `.namecheap.env`; certbot settings in
-`~/nginx/examples/nginx-certbot.env`; per-service secrets in each stack's `.env`.
+- SSH: `ssh homeserver`
+- Current data root: `/home/layz`
+- Current media path: `/mnt/seagate`
+- Traefik uses `/var/run/docker.sock:ro`; this is root-equivalent.
