@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck
+        run: shellcheck stack tests/*.sh
+
+      - name: Stack tests
+        run: |
+          ./tests/init_test.sh
+          ./tests/check_test.sh
+          ./tests/lifecycle_test.sh
+          ./tests/update_test.sh
+
+      - name: Compose render tests
+        run: ./tests/compose_render_test.sh
+
+      - name: Data safety tests
+        run: ./tests/data_safety_test.sh

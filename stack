@@ -14,8 +14,8 @@ info() {
 }
 
 load_env() {
-  # shellcheck disable=SC1091
   set -a
+  # shellcheck disable=SC1091
   . "$ROOT/.env"
   set +a
 }

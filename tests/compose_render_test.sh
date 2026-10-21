@@ -44,7 +44,7 @@ jellyfin="$(docker compose \
 
 grep -Fq 'name: jellyfin' <<< "$jellyfin" \
   || { printf 'FAIL: Jellyfin project name missing\n' >&2; exit 1; }
-grep -Fq 'Host(`flix.example.test`)' <<< "$jellyfin" \
+grep -Fq "Host(\`flix.example.test\`)" <<< "$jellyfin" \
   || { printf 'FAIL: Jellyfin host rule missing\n' >&2; exit 1; }
 grep -Fq 'https://flix.example.test' <<< "$jellyfin" \
   || { printf 'FAIL: Jellyfin published URL missing\n' >&2; exit 1; }
