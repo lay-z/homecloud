@@ -1,0 +1,8 @@
+.env
+*/.env
+*/.secrets
+*/compose.override.yaml
+.namecheap.env
+*.bak
+*.log
+__pycache__/
