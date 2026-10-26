@@ -72,9 +72,10 @@ passwords, env files, resolved configs, and ACME keys.
 
 The SQL dumps and Mongo archive are the consistent database backups.
 `data-root.tgz` is a quiesced filesystem copy taken while the old services are
-stopped. Media under `/mnt/seagate` is not included; it is not migrated. The
-retained old named volumes and bind mounts are the migration rollback path; do
-not treat the tar as a database-consistent backup.
+stopped. Media under `/mnt/seagate` is not included; it is not migrated. Back
+up `/mnt/seagate` separately; the tar does not include it. The retained old named
+volumes and bind mounts are the migration rollback path; do not treat the tar as
+a database-consistent backup.
 
 If the block fails after stopping the services, restart them before continuing:
 
@@ -322,6 +323,17 @@ This step keeps nginx on 80/443 and swaps the container behind nginx. It is the
 safe way to validate each converted stack before Phase 3. Run the commands from
 the repo root (`$HOME/stack`).
 
+Before the per-service swap, confirm the old nginx container uses host
+networking:
+
+```bash
+docker inspect examples-nginx-1 --format '{{.HostConfig.NetworkMode}}'
+```
+
+Expect `host`. If it is not `host`, do not soft-swap: use the Phase 3 cutover or
+add a shared network and adjust the upstreams. The new services publish only
+loopback ports.
+
 For every Phase 2 service, plus the Jellyfin soft-swap:
 
 1. Migrate only the volumes for this service using the matching pair in
@@ -376,7 +388,8 @@ docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.s
 curl -sI https://status.priyav.dev/ | head
 ```
 
-The Checkmate override is only needed if group 957 owns the Docker socket.
+The Checkmate override supplies both `group_add: ["957"]` and the capture host
+mounts, so copy it on the reference server.
 
 `docker compose -f` does not auto-merge `compose.override.yaml`; pass it
 explicitly when present.

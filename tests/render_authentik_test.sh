@@ -30,6 +30,8 @@ assert_mount "$rendered_json" /var/run/docker.sock /var/run/docker.sock 'worker 
 assert_no_service_mount "$rendered_json" server /var/run/docker.sock /var/run/docker.sock 'server must not mount the docker socket'
 assert_no_service_mount "$rendered_json" postgresql /var/run/docker.sock /var/run/docker.sock 'postgresql must not mount the docker socket'
 assert_service_env "$rendered_json" postgresql POSTGRES_PASSWORD test-password 'postgresql password missing'
+assert_service_env_absent "$rendered_json" postgresql AUTHENTIK_SECRET_KEY 'postgresql must not receive AUTHENTIK_SECRET_KEY'
+assert_service_env_absent "$rendered_json" postgresql PG_PASS 'postgresql must not receive PG_PASS'
 assert_service_env "$rendered_json" server AUTHENTIK_SECRET_KEY test-secret 'server is not loading AUTHENTIK_SECRET_KEY from .secrets'
 assert_service_env "$rendered_json" server AUTHENTIK_POSTGRESQL__PASSWORD test-password 'server is not loading the database password'
 assert_service_env "$rendered_json" server AUTHENTIK_POSTGRESQL__HOST postgresql 'server database host missing'

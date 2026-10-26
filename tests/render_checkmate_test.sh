@@ -29,8 +29,6 @@ assert_mount_read_only "$rendered_json" checkmate /var/run/docker.sock /var/run/
 assert_no_service_mount "$rendered_json" mongodb /var/run/docker.sock /var/run/docker.sock 'mongodb must not mount the docker socket'
 assert_no_service_mount "$rendered_json" capture /var/run/docker.sock /var/run/docker.sock 'capture must not mount the docker socket'
 assert_mount_read_only "$rendered_json" capture /etc/os-release /etc/os-release 'capture os-release bind is not read-only'
-assert_mount_read_only "$rendered_json" capture /mnt/old-home /mnt/old-home 'capture old-home bind is not read-only'
-assert_mount_read_only "$rendered_json" capture /mnt/seagate /mnt/seagate 'capture seagate bind is not read-only'
 assert_render_contains "$rendered" 'stop_grace_period: 1m0s' 'stop grace period missing'
 assert_render_contains "$rendered" 'sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de' 'checkmate image digest missing'
 assert_render_contains "$rendered" 'sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907' 'mongo image digest missing'
@@ -48,6 +46,16 @@ assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missi
 assert_service_env_absent "$rendered_json" capture JWT_SECRET 'capture must not receive JWT_SECRET'
 assert_service_env_absent "$rendered_json" capture ENCRYPTION_KEY 'capture must not receive ENCRYPTION_KEY'
 assert_service_env_absent "$rendered_json" capture CAPTURE_API_SECRET 'capture must not receive the raw capture secret'
+
+cp "$TMP/checkmate/compose.override.yaml.example" "$TMP/checkmate/compose.override.yaml"
+rendered_override="$(render_service checkmate .env .secrets)"
+rendered_override_json="$(render_service_json checkmate .env .secrets)"
+
+assert_mount_read_only "$rendered_override_json" capture /mnt/old-home /mnt/old-home 'capture old-home bind is not read-only'
+assert_mount_read_only "$rendered_override_json" capture /mnt/seagate /mnt/seagate 'capture seagate bind is not read-only'
+assert_render_contains "$rendered_override" 'group_add:' 'checkmate group_add missing'
+assert_render_contains "$rendered_override" '- "957"' 'checkmate group_add group missing'
+assert_no_volumes "$rendered_override_json"
 
 cp "$TMP/checkmate/.secrets" "$TMP/checkmate/.secrets-missing"
 sed -i '/^CAPTURE_API_SECRET=/d' "$TMP/checkmate/.secrets-missing"

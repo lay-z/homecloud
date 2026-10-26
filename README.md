@@ -95,7 +95,8 @@ uses a named or anonymous data volume. `stack down` rejects `-v` and
 `--volumes`, and `stack check` fails if a rendered mount has `type: volume`.
 `docker compose down -v` and volume pruning therefore cannot remove application
 data. Back up `${DATA_ROOT}` separately; bind mounts do not protect against
-`rm -rf`.
+`rm -rf`. Jellyfin media and Immich uploads (for example `/mnt/seagate`) are
+outside `${DATA_ROOT}` and need separate backups.
 
 ## Notes
 

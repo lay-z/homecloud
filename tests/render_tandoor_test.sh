@@ -25,5 +25,7 @@ assert_mount "$rendered_json" "$TMP/data/tandoor/mediafiles" /opt/recipes/mediaf
 assert_service_env "$rendered_json" web_recipes SECRET_KEY test-secret 'web_recipes is not loading SECRET_KEY from .secrets'
 assert_service_env "$rendered_json" web_recipes POSTGRES_PASSWORD test-password 'web_recipes is not loading POSTGRES_PASSWORD from .secrets'
 assert_service_env "$rendered_json" db_recipes POSTGRES_PASSWORD test-password 'db_recipes is not loading POSTGRES_PASSWORD from .secrets'
+assert_service_env_absent "$rendered_json" db_recipes SECRET_KEY 'db_recipes must not receive SECRET_KEY'
+assert_service_env_absent "$rendered_json" db_recipes EMAIL_HOST_PASSWORD 'db_recipes must not receive EMAIL_HOST_PASSWORD'
 
 printf 'tandoor render tests passed\n'

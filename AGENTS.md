@@ -41,4 +41,4 @@ stop nginx until the cutover is explicitly scheduled.
 - SSH: `ssh homeserver`
 - Current data root: `/home/layz`
 - Current media path: `/mnt/seagate`
-- Traefik uses `/var/run/docker.sock:ro`; this is root-equivalent.
+- Traefik and Checkmate use `/var/run/docker.sock:ro`; Authentik's worker uses it read-write as root. All are root-equivalent.

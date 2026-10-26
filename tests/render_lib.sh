@@ -41,6 +41,10 @@ render_service() {
   local args=(--env-file "$TMP/.env" -f "$TMP/$service/compose.yaml")
   local file
 
+  if [[ -f "$TMP/$service/compose.override.yaml" ]]; then
+    args+=(-f "$TMP/$service/compose.override.yaml")
+  fi
+
   for file in "$@"; do
     args+=(--env-file "$TMP/$service/$file")
   done
@@ -53,6 +57,10 @@ render_service_json() {
   shift
   local args=(--env-file "$TMP/.env" -f "$TMP/$service/compose.yaml")
   local file
+
+  if [[ -f "$TMP/$service/compose.override.yaml" ]]; then
+    args+=(-f "$TMP/$service/compose.override.yaml")
+  fi
 
   for file in "$@"; do
     args+=(--env-file "$TMP/$service/$file")

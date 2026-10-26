@@ -482,6 +482,10 @@ render_service() {
   local args=(--env-file "$TMP/.env" -f "$TMP/$service/compose.yaml")
   local file
 
+  if [[ -f "$TMP/$service/compose.override.yaml" ]]; then
+    args+=(-f "$TMP/$service/compose.override.yaml")
+  fi
+
   for file in "$@"; do
     args+=(--env-file "$TMP/$service/$file")
   done
@@ -494,6 +498,10 @@ render_service_json() {
   shift
   local args=(--env-file "$TMP/.env" -f "$TMP/$service/compose.yaml")
   local file
+
+  if [[ -f "$TMP/$service/compose.override.yaml" ]]; then
+    args+=(-f "$TMP/$service/compose.override.yaml")
+  fi
 
   for file in "$@"; do
     args+=(--env-file "$TMP/$service/$file")
@@ -890,6 +898,8 @@ assert_mount "$rendered_json" "$TMP/data/tandoor/mediafiles" /opt/recipes/mediaf
 assert_service_env "$rendered_json" web_recipes SECRET_KEY test-secret 'web_recipes is not loading SECRET_KEY from .secrets'
 assert_service_env "$rendered_json" web_recipes POSTGRES_PASSWORD test-password 'web_recipes is not loading POSTGRES_PASSWORD from .secrets'
 assert_service_env "$rendered_json" db_recipes POSTGRES_PASSWORD test-password 'db_recipes is not loading POSTGRES_PASSWORD from .secrets'
+assert_service_env_absent "$rendered_json" db_recipes SECRET_KEY 'db_recipes must not receive SECRET_KEY'
+assert_service_env_absent "$rendered_json" db_recipes EMAIL_HOST_PASSWORD 'db_recipes must not receive EMAIL_HOST_PASSWORD'
 
 printf 'tandoor render tests passed\n'
 ```
@@ -944,7 +954,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-      - .secrets
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ${DATA_ROOT}/tandoor/postgresql:/var/lib/postgresql/data
 
@@ -1053,6 +1064,8 @@ assert_mount "$rendered_json" /var/run/docker.sock /var/run/docker.sock 'worker 
 assert_no_service_mount "$rendered_json" server /var/run/docker.sock /var/run/docker.sock 'server must not mount the docker socket'
 assert_no_service_mount "$rendered_json" postgresql /var/run/docker.sock /var/run/docker.sock 'postgresql must not mount the docker socket'
 assert_service_env "$rendered_json" postgresql POSTGRES_PASSWORD test-password 'postgresql password missing'
+assert_service_env_absent "$rendered_json" postgresql AUTHENTIK_SECRET_KEY 'postgresql must not receive AUTHENTIK_SECRET_KEY'
+assert_service_env_absent "$rendered_json" postgresql PG_PASS 'postgresql must not receive PG_PASS'
 assert_service_env "$rendered_json" server AUTHENTIK_SECRET_KEY test-secret 'server is not loading AUTHENTIK_SECRET_KEY from .secrets'
 assert_service_env "$rendered_json" server AUTHENTIK_POSTGRESQL__PASSWORD test-password 'server is not loading the database password'
 assert_service_env "$rendered_json" server AUTHENTIK_POSTGRESQL__HOST postgresql 'server database host missing'
@@ -1103,7 +1116,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-      - .secrets
     environment:
       POSTGRES_DB: ${PG_DB}
       POSTGRES_USER: ${PG_USER}
@@ -1398,8 +1410,6 @@ assert_mount_read_only "$rendered_json" checkmate /var/run/docker.sock /var/run/
 assert_no_service_mount "$rendered_json" mongodb /var/run/docker.sock /var/run/docker.sock 'mongodb must not mount the docker socket'
 assert_no_service_mount "$rendered_json" capture /var/run/docker.sock /var/run/docker.sock 'capture must not mount the docker socket'
 assert_mount_read_only "$rendered_json" capture /etc/os-release /etc/os-release 'capture os-release bind is not read-only'
-assert_mount_read_only "$rendered_json" capture /mnt/old-home /mnt/old-home 'capture old-home bind is not read-only'
-assert_mount_read_only "$rendered_json" capture /mnt/seagate /mnt/seagate 'capture seagate bind is not read-only'
 assert_render_contains "$rendered" 'stop_grace_period: 1m0s' 'stop grace period missing'
 assert_render_contains "$rendered" 'sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de' 'checkmate image digest missing'
 assert_render_contains "$rendered" 'sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907' 'mongo image digest missing'
@@ -1417,6 +1427,16 @@ assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missi
 assert_service_env_absent "$rendered_json" capture JWT_SECRET 'capture must not receive JWT_SECRET'
 assert_service_env_absent "$rendered_json" capture ENCRYPTION_KEY 'capture must not receive ENCRYPTION_KEY'
 assert_service_env_absent "$rendered_json" capture CAPTURE_API_SECRET 'capture must not receive the raw capture secret'
+
+cp "$TMP/checkmate/compose.override.yaml.example" "$TMP/checkmate/compose.override.yaml"
+rendered_override="$(render_service checkmate .env .secrets)"
+rendered_override_json="$(render_service_json checkmate .env .secrets)"
+
+assert_mount_read_only "$rendered_override_json" capture /mnt/old-home /mnt/old-home 'capture old-home bind is not read-only'
+assert_mount_read_only "$rendered_override_json" capture /mnt/seagate /mnt/seagate 'capture seagate bind is not read-only'
+assert_render_contains "$rendered_override" 'group_add:' 'checkmate group_add missing'
+assert_render_contains "$rendered_override" '- "957"' 'checkmate group_add group missing'
+assert_no_volumes "$rendered_override_json"
 
 cp "$TMP/checkmate/.secrets" "$TMP/checkmate/.secrets-missing"
 sed -i '/^CAPTURE_API_SECRET=/d' "$TMP/checkmate/.secrets-missing"
@@ -1522,8 +1542,6 @@ services:
       API_SECRET: ${CAPTURE_API_SECRET:?CAPTURE_API_SECRET is required}
     volumes:
       - /etc/os-release:/etc/os-release:ro
-      - /mnt/old-home:/mnt/old-home:ro
-      - /mnt/seagate:/mnt/seagate:ro
 ```
 
 - [ ] **Step 6: Write the host override example**
@@ -1535,10 +1553,15 @@ services:
   checkmate:
     group_add:
       - "957"
+  capture:
+    volumes:
+      - /mnt/old-home:/mnt/old-home:ro
+      - /mnt/seagate:/mnt/seagate:ro
 ```
 
 The real `checkmate/compose.override.yaml` is gitignored. It is required on the
-reference server so the container can access the Docker socket group.
+reference server so the container can access the Docker socket group and the
+capture service can read the host media mounts.
 
 - [ ] **Step 7: Run the render test**
 
@@ -1705,6 +1728,13 @@ All public services are converted to per-service directories. nginx still owns
 ports 80 and 443 until Phase 3 cuts ingress over to Traefik.
 ```
 
+In `README.md` Data safety, append:
+
+```markdown
+Jellyfin media and Immich uploads (for example `/mnt/seagate`) are outside
+`${DATA_ROOT}` and need separate backups.
+```
+
 - [ ] **Step 2: Add the volume-move procedure to `docs/operations.md`**
 
 Immediately after the `## Data safety` section, insert:
@@ -1777,6 +1807,21 @@ Checkmate's `/data/configdb` volume is empty; create
 Do not delete the old volumes until the new containers have been running and
 verified for an agreed period.
 ````
+
+In `docs/operations.md` Backups, add the external media line:
+
+```markdown
+- `/mnt/seagate`: Jellyfin media and Immich uploads
+```
+
+In `docs/operations.md` Security, replace the paragraph with:
+
+```markdown
+Traefik and Checkmate mount the Docker socket read-only; Authentik's worker
+mounts it read-write and runs as root for outpost management. All three are
+root-equivalent on the host. Do not run untrusted containers. Do not expose the
+Traefik dashboard.
+```
 
 - [ ] **Step 3: Harden the adoption runbook preamble, backup, prepare, cutover, and rollback**
 
@@ -1859,9 +1904,10 @@ passwords, env files, resolved configs, and ACME keys.
 
 The SQL dumps and Mongo archive are the consistent database backups.
 `data-root.tgz` is a quiesced filesystem copy taken while the old services are
-stopped. Media under `/mnt/seagate` is not included; it is not migrated. The
-retained old named volumes and bind mounts are the migration rollback path; do
-not treat the tar as a database-consistent backup.
+stopped. Media under `/mnt/seagate` is not included; it is not migrated. Back
+up `/mnt/seagate` separately; the tar does not include it. The retained old named
+volumes and bind mounts are the migration rollback path; do not treat the tar as
+a database-consistent backup.
 
 If the block fails after stopping the services, restart them before continuing:
 
@@ -2100,6 +2146,17 @@ This step keeps nginx on 80/443 and swaps the container behind nginx. It is the
 safe way to validate each converted stack before Phase 3. Run the commands from
 the repo root (`$HOME/stack`).
 
+Before the per-service swap, confirm the old nginx container uses host
+networking:
+
+```bash
+docker inspect examples-nginx-1 --format '{{.HostConfig.NetworkMode}}'
+```
+
+Expect `host`. If it is not `host`, do not soft-swap: use the Phase 3 cutover or
+add a shared network and adjust the upstreams. The new services publish only
+loopback ports.
+
 For every Phase 2 service, plus the Jellyfin soft-swap:
 
 1. Migrate only the volumes for this service using the matching pair in
@@ -2154,7 +2211,8 @@ docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.s
 curl -sI https://status.priyav.dev/ | head
 ```
 
-The Checkmate override is only needed if group 957 owns the Docker socket.
+The Checkmate override supplies both `group_add: ["957"]` and the capture host
+mounts, so copy it on the reference server.
 
 `docker compose -f` does not auto-merge `compose.override.yaml`; pass it
 explicitly when present.
@@ -2281,6 +2339,12 @@ and 443; Phase 3 performs the ingress cutover and adds the update timer. Do not
 stop nginx until the cutover is explicitly scheduled.
 ```
 
+In `AGENTS.md` Server notes, replace the Docker socket line with:
+
+```markdown
+- Traefik and Checkmate use `/var/run/docker.sock:ro`; Authentik's worker uses it read-write as root. All are root-equivalent.
+```
+
 - [ ] **Step 7: Commit**
 
 Add `*/compose.staging.yaml` to `.gitignore` so the staging override stays
@@ -2375,8 +2439,8 @@ stop nginx.
       `jellyfin/compose.override.yaml` for `/dev/dri` with `cp -n`, so an
       existing host override is not overwritten.
 - [ ] Copy `checkmate/compose.override.yaml.example` to
-      `checkmate/compose.override.yaml` with `cp -n` if group 957 owns the
-      Docker socket.
+      `checkmate/compose.override.yaml` with `cp -n` so the container joins
+      group 957 and capture sees the host media mounts.
 - [ ] For each service, migrate only that service's volumes using the matching
       stop and copy pair in section 4, immediately before the swap. Do not stop
       all four volume owners at once; stopping Authentik early breaks Papra OIDC

@@ -7,7 +7,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-      - .secrets
     environment:
       POSTGRES_DB: ${PG_DB}
       POSTGRES_USER: ${PG_USER}

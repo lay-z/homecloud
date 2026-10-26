@@ -117,6 +117,7 @@ first. Database migrations may not be reversible.
 Back up these separately:
 
 - `${DATA_ROOT}`: application data and databases
+- `/mnt/seagate`: Jellyfin media and Immich uploads
 - root `.env`
 - every `*/.env`
 - every `*/.secrets`
@@ -147,6 +148,7 @@ ss -ltnp | grep 8096
 
 ## Security
 
-Traefik and Checkmate mount the Docker socket read-only, but that is still
+Traefik and Checkmate mount the Docker socket read-only; Authentik's worker
+mounts it read-write and runs as root for outpost management. All three are
 root-equivalent on the host. Do not run untrusted containers. Do not expose the
 Traefik dashboard.
