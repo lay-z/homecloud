@@ -15,6 +15,13 @@ printf '%s\n' "$*" >> "${DOCKER_LOG:?}"
 if [[ "${DOCKER_VOLUME_JSON:-0}" == "1" && "$*" == *"config --format json"* ]]; then
   printf '{"services":{"x":{"volumes":[{"type":"volume"}]}}}\n'
 fi
+if [[ -n "${DOCKER_MISSING_VOLUME:-}" && "$*" == "volume inspect $DOCKER_MISSING_VOLUME" ]]; then
+  exit 1
+fi
+if [[ -n "${DOCKER_BUSY_VOLUME:-}" && "$*" == "ps -q --filter volume=$DOCKER_BUSY_VOLUME" ]]; then
+  printf 'fake-container-id\n'
+  exit 0
+fi
 exit 0
 FAKE
 chmod +x "$TMP/bin/docker"

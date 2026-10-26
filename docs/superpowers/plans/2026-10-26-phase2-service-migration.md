@@ -128,8 +128,21 @@ Responsibilities:
 **Files:**
 - Create: `tools/migrate-volume.sh`
 - Create: `tests/migrate_volume_test.sh`
+- Modify: `tests/lib.sh`
 
 - [ ] **Step 1: Write the failing test**
+
+Extend the fake docker in `tests/lib.sh`. In the heredoc that writes `$TMP/bin/docker`, add these cases after the existing `DOCKER_VOLUME_JSON` block and before `exit 0`:
+
+```bash
+if [[ -n "${DOCKER_MISSING_VOLUME:-}" && "$*" == "volume inspect $DOCKER_MISSING_VOLUME" ]]; then
+  exit 1
+fi
+if [[ -n "${DOCKER_BUSY_VOLUME:-}" && "$*" == "ps -q --filter volume=$DOCKER_BUSY_VOLUME" ]]; then
+  printf 'fake-container-id\n'
+  exit 0
+fi
+```
 
 Create `tests/migrate_volume_test.sh` with exactly:
 
@@ -144,12 +157,17 @@ dest="$TMP/volume-data"
 if "$ROOT/tools/migrate-volume.sh" >/dev/null 2>&1; then
   fail "accepted missing arguments"
 fi
+if "$ROOT/tools/migrate-volume.sh" source relative/path extra >/dev/null 2>&1; then
+  fail "accepted extra arguments"
+fi
 if "$ROOT/tools/migrate-volume.sh" source relative/path >/dev/null 2>&1; then
   fail "accepted a relative destination"
 fi
 
 : > "$DOCKER_LOG"
 "$ROOT/tools/migrate-volume.sh" source_volume "$dest" >/dev/null
+assert_contains "$DOCKER_LOG" "volume inspect source_volume"
+assert_contains "$DOCKER_LOG" "ps -q --filter volume=source_volume"
 assert_contains "$DOCKER_LOG" "run --rm"
 assert_contains "$DOCKER_LOG" "-v source_volume:/from:ro"
 assert_contains "$DOCKER_LOG" "-v $dest:/to"
@@ -159,6 +177,23 @@ printf 'keep\n' > "$dest/keep"
 if "$ROOT/tools/migrate-volume.sh" source_volume "$dest" >/dev/null 2>&1; then
   fail "copied into a non-empty destination"
 fi
+
+hidden="$TMP/volume-data-hidden"
+mkdir -p "$hidden"
+printf 'keep\n' > "$hidden/.hidden"
+if "$ROOT/tools/migrate-volume.sh" source_volume "$hidden" >/dev/null 2>&1; then
+  fail "copied into a destination with only hidden files"
+fi
+
+if DOCKER_MISSING_VOLUME=missing_volume "$ROOT/tools/migrate-volume.sh" missing_volume "$TMP/missing-data" >/dev/null 2>&1; then
+  fail "accepted a missing source volume"
+fi
+[[ ! -e "$TMP/missing-data" ]] || fail "created the destination before validating the volume"
+
+if DOCKER_BUSY_VOLUME=busy_volume "$ROOT/tools/migrate-volume.sh" busy_volume "$TMP/busy-data" >/dev/null 2>&1; then
+  fail "copied from a volume in use by a running container"
+fi
+[[ ! -e "$TMP/busy-data" ]] || fail "created the destination before checking volume use"
 
 printf 'migrate volume tests passed\n'
 ```
@@ -187,21 +222,31 @@ usage() {
   exit 1
 }
 
-volume="${1:-}"
-dest="${2:-}"
+[[ $# -eq 2 ]] || usage
+volume="$1"
+dest="$2"
 [[ -n "$volume" && -n "$dest" ]] || usage
 [[ "$dest" == /* ]] || {
   printf 'destination must be absolute: %s\n' "$dest" >&2
   exit 1
 }
 
+"$DOCKER_BIN" volume inspect "$volume" >/dev/null
+if [[ -n "$("$DOCKER_BIN" ps -q --filter "volume=$volume")" ]]; then
+  printf 'volume is in use by a running container: %s\n' "$volume" >&2
+  exit 1
+fi
+
 mkdir -p "$dest"
-if [[ -n "$(ls -A "$dest")" ]]; then
+if ! entries="$(ls -A -- "$dest")"; then
+  printf 'cannot inspect destination: %s\n' "$dest" >&2
+  exit 1
+fi
+if [[ -n "$entries" ]]; then
   printf 'destination is not empty: %s\n' "$dest" >&2
   exit 1
 fi
 
-"$DOCKER_BIN" volume inspect "$volume" >/dev/null
 "$DOCKER_BIN" run --rm \
   -v "$volume:/from:ro" \
   -v "$dest:/to" \
@@ -220,7 +265,7 @@ Expected: `migrate volume tests passed`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tools/migrate-volume.sh tests/migrate_volume_test.sh
+git add tools/migrate-volume.sh tests/migrate_volume_test.sh tests/lib.sh
 git commit -m "feat: add volume migration tool"
 ```
 

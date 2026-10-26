@@ -8,12 +8,17 @@ dest="$TMP/volume-data"
 if "$ROOT/tools/migrate-volume.sh" >/dev/null 2>&1; then
   fail "accepted missing arguments"
 fi
+if "$ROOT/tools/migrate-volume.sh" source relative/path extra >/dev/null 2>&1; then
+  fail "accepted extra arguments"
+fi
 if "$ROOT/tools/migrate-volume.sh" source relative/path >/dev/null 2>&1; then
   fail "accepted a relative destination"
 fi
 
 : > "$DOCKER_LOG"
 "$ROOT/tools/migrate-volume.sh" source_volume "$dest" >/dev/null
+assert_contains "$DOCKER_LOG" "volume inspect source_volume"
+assert_contains "$DOCKER_LOG" "ps -q --filter volume=source_volume"
 assert_contains "$DOCKER_LOG" "run --rm"
 assert_contains "$DOCKER_LOG" "-v source_volume:/from:ro"
 assert_contains "$DOCKER_LOG" "-v $dest:/to"
@@ -23,5 +28,22 @@ printf 'keep\n' > "$dest/keep"
 if "$ROOT/tools/migrate-volume.sh" source_volume "$dest" >/dev/null 2>&1; then
   fail "copied into a non-empty destination"
 fi
+
+hidden="$TMP/volume-data-hidden"
+mkdir -p "$hidden"
+printf 'keep\n' > "$hidden/.hidden"
+if "$ROOT/tools/migrate-volume.sh" source_volume "$hidden" >/dev/null 2>&1; then
+  fail "copied into a destination with only hidden files"
+fi
+
+if DOCKER_MISSING_VOLUME=missing_volume "$ROOT/tools/migrate-volume.sh" missing_volume "$TMP/missing-data" >/dev/null 2>&1; then
+  fail "accepted a missing source volume"
+fi
+[[ ! -e "$TMP/missing-data" ]] || fail "created the destination before validating the volume"
+
+if DOCKER_BUSY_VOLUME=busy_volume "$ROOT/tools/migrate-volume.sh" busy_volume "$TMP/busy-data" >/dev/null 2>&1; then
+  fail "copied from a volume in use by a running container"
+fi
+[[ ! -e "$TMP/busy-data" ]] || fail "created the destination before checking volume use"
 
 printf 'migrate volume tests passed\n'
