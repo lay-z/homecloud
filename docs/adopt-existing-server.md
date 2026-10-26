@@ -2,9 +2,8 @@
 
 This runbook is for the reference server, which currently runs nginx and
 per-service compose files under `~/<service>/`. All services are already
-converted to Traefik routes. Sections 1-5 and 9 are the Phase 2 work done while
-nginx owns ports 80 and 443. Section 6 is the Phase 3 ingress cutover and must
-only run when explicitly scheduled.
+converted to Traefik routes. Sections 1-5 and 9 are Phase 2; sections 6-8 are
+Phase 3. Complete section 9 for every service before section 6.
 
 ## 1. Back up
 
@@ -12,6 +11,7 @@ only run when explicitly scheduled.
 set -euo pipefail
 umask 077
 backup="$HOME/backups/stack-$(date +%F-%H%M%S)"
+mkdir -p "$HOME/backups"
 mkdir "$backup"
 chmod 700 "$backup"
 
@@ -25,6 +25,11 @@ done
 
 sudo tar -C /home/layz -czf "$backup/data-root.tgz" \
   jellyfin immich tandoor authentik papra checkmate traefik
+
+docker exec authentik-postgresql-1 pg_dump -U authentik authentik > "$backup/authentik.sql"
+docker exec tandoor-db_recipes-1 pg_dump -U djangouser djangodb > "$backup/tandoor.sql"
+docker exec immich_postgres pg_dump -U postgres immich > "$backup/immich.sql"
+docker exec checkmate-mongodb-1 mongodump --archive --gzip > "$backup/checkmate-mongo.archive.gz"
 
 nginx_file="$HOME/nginx/examples/docker-compose.yml"
 [[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
@@ -46,9 +51,10 @@ passwords, env files, resolved configs, and ACME keys.
 
 If the backup fails, stop and fix it before continuing.
 
+The SQL dumps and Mongo archive are the consistent database backups.
 `data-root.tgz` is a best-effort filesystem copy of bind data taken while
-services run. For a consistent database backup, stop the old services first or
-use `pg_dump`/`mongodump`/SQLite backup. The retained old named volumes and bind
+services run. For a fully consistent database backup, stop the old services
+first or rely on the dumps above. The retained old named volumes and bind
 mounts are the migration rollback path; do not treat the live tar as a
 database-consistent backup.
 
@@ -58,11 +64,12 @@ Never commit the backup directory.
 
 ```bash
 set -euo pipefail
+REPO_URL=<repo-url>
 if [[ -e "$HOME/stack" ]]; then
   printf '%s already exists; move it aside or update it manually\n' "$HOME/stack" >&2
   exit 1
 fi
-git clone <repo> "$HOME/stack"
+git clone "$REPO_URL" "$HOME/stack"
 cd "$HOME/stack"
 cp -n .env.example .env
 ```
@@ -102,8 +109,9 @@ Confirm the render device path exists.
 
 ## 4. Migrate old named volumes
 
-Run only the stop and copy pair for the service being swapped. Do not stop all
-four volume owners at once; stopping Authentik early breaks Papra OIDC logins.
+Run only the block for the service being swapped; do not run all four at once.
+Do not stop all four volume owners together; stopping Authentik early breaks
+Papra OIDC logins.
 
 Stop the owning container, then copy its volume into the bind path. Never pass
 `-v` to `docker compose down`. The tool refuses a non-empty destination. If a
@@ -111,21 +119,35 @@ copy fails partway, remove only that failed partial copy; never delete a
 populated destination.
 
 ```bash
-# Authentik
-docker stop --time 60 authentik-postgresql-1
-./tools/migrate-volume.sh authentik_database /home/layz/authentik/database
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+```
 
-# Tandoor
-docker stop --time 60 tandoor-web_recipes-1
-./tools/migrate-volume.sh tandoor_staticfiles /home/layz/tandoor/staticfiles
-
-# Checkmate
-docker stop --time 60 checkmate-mongodb-1
-./tools/migrate-volume.sh checkmate_mongo-data /home/layz/checkmate/mongo-data
-
+```bash
 # Immich
 docker stop --time 60 immich_machine_learning
-./tools/migrate-volume.sh immich_model-cache /home/layz/immich/model-cache
+./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
+```
+
+```bash
+# Tandoor
+docker stop --time 60 tandoor-web_recipes-1
+./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
+```
+
+```bash
+# Checkmate
+docker stop --time 60 checkmate-mongodb-1
+./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
+```
+
+```bash
+# Authentik
+docker stop --time 60 authentik-postgresql-1
+./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
 ```
 
 Create empty directories for the disposable data:
@@ -178,12 +200,16 @@ These must match the old container's mounts. Check with:
 docker inspect jellyfin --format '{{json .Mounts}}' | python3 -m json.tool
 ```
 
-## 6. Cut over ingress
+**Phase 3 only. Do not run sections 6-8 until section 9 is complete for every
+service.**
 
-Do this only after section 9 is complete for every service. Stop nginx without
-removing data:
+## 6. Cut over ingress (Phase 3)
+
+Do this only after section 9 is complete for every service. Run `./stack check`
+before stopping nginx:
 
 ```bash
+./stack check
 nginx_file="$HOME/nginx/examples/docker-compose.yml"
 [[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
 docker compose -f "$nginx_file" down
@@ -193,7 +219,7 @@ docker compose -f "$nginx_file" down
 Do not stop an old project after its new project is running. Both use the same
 project name, so `docker compose down` would remove the new containers.
 
-## 7. Verify
+## 7. Verify (Phase 3)
 
 ```bash
 for host in flix photos recipes id docs status info.status; do
@@ -205,9 +231,26 @@ docker logs traefik --tail=100
 
 Verify an Authentik login and one Jellyfin playback.
 
-## 8. Rollback
+## 8. Rollback (Phase 3)
+
+Rollback starts the old stacks on the old volumes. Named-volume services
+(Authentik database, Checkmate Mongo, Tandoor static files, Immich model cache)
+lose post-swap writes on rollback because the old volumes do not contain them.
+Bind-mounted services share the same paths, so their post-swap writes remain.
+If writes to a named volume are needed, copy the bind path back into the old
+volume before starting the old stack; otherwise accept the loss.
+
+If Papra was swapped and the OIDC client secret was rotated:
+
+- Full rollback including Authentik: the old Authentik still has the old OIDC
+  secret, so keep the old Papra secret.
+- Papra-only rollback while new Authentik remains: update the old Papra compose
+  or env with the new OIDC secret.
+- If you copy the new Authentik bind data back into the old volume, update old
+  Papra to the new secret.
 
 ```bash
+set -euo pipefail
 ./stack down
 
 for service in jellyfin immich tandoor authentik papra checkmate; do
@@ -221,27 +264,16 @@ nginx_file="$HOME/nginx/examples/docker-compose.yml"
 docker compose -f "$nginx_file" up -d
 ```
 
-Rollback starts the old stacks on the old volumes. Named-volume services
-(Authentik database, Checkmate Mongo, Tandoor static files, Immich model cache)
-lose post-swap writes on rollback because the old volumes do not contain them.
-Bind-mounted services share the same paths, so their post-swap writes remain.
-If writes to a named volume are needed, copy the bind path back into the old
-volume before starting the old stack; otherwise accept the loss.
-
-If Papra was swapped and the OIDC client secret was rotated, update the old
-Papra compose or env with the new secret (or rotate again) before starting the
-old Papra stack; otherwise OIDC login fails.
-
 Keep the old compose files and nginx certificates until the new stack has been
 stable for an agreed period.
 
-## 9. Soft-swap one service at a time
+## 9. Soft-swap one service at a time (Phase 2)
 
 This step keeps nginx on 80/443 and swaps the container behind nginx. It is the
 safe way to validate each converted stack before Phase 3. Run the commands from
 the repo root (`$HOME/stack`).
 
-For every service:
+For every Phase 2 service, plus the Jellyfin soft-swap:
 
 1. Migrate only the volumes for this service using the matching pair in
    section 4, immediately before the swap.
@@ -290,6 +322,8 @@ docker compose -f "$HOME/checkmate/docker-compose.yaml" down
 docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.secrets -f checkmate/compose.yaml -f checkmate/compose.override.yaml up -d
 curl -sI https://status.priyav.dev/ | head
 ```
+
+The Checkmate override is only needed if group 957 owns the Docker socket.
 
 `docker compose -f` does not auto-merge `compose.override.yaml`; pass it
 explicitly when present.
@@ -375,21 +409,27 @@ docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f tra
 ```
 
 If an earlier attempt left `traefik/compose.override.yaml`, remove it before
-Phase 3; `stack` auto-includes it.
+Phase 3 with `rm traefik/compose.override.yaml`; `stack` auto-includes it.
 
-Rollback for a single service: stop the new project
+Rollback for a single service. Writes made to the new bind mounts after the
+swap are not copied back. If those writes are needed, copy the bind path back
+into the old volume before starting the old stack; otherwise accept the loss.
+
+For Papra: if new Authentik remains, update the old Papra compose or env with
+the new OIDC secret. If you also roll back Authentik, the old Authentik still
+has the old secret, so keep the old Papra secret. If you copy the new Authentik
+bind data back into the old volume, update old Papra to the new secret.
+
+Stop the new project
 (`docker compose --env-file .env --env-file <service>/.env --env-file <service>/.secrets -f <service>/compose.yaml down`)
 and start the old one:
 
 ```bash
+set -euo pipefail
 file="$HOME/<service>/docker-compose.yml"
 [[ -f "$file" ]] || file="$HOME/<service>/docker-compose.yaml"
 docker compose -f "$file" up -d
 ```
-
-Writes made to the new bind mounts after the swap are not copied back. If those
-writes are needed, copy the bind path back into the old volume before starting
-the old stack; otherwise accept the loss.
 
 Do not run `./stack up` or `./stack down` during Phase 2; use the per-service
 commands, because both operate on the whole stack and can remove still-running

@@ -24,33 +24,44 @@ independent backups.
 
 ## Migrating existing named volumes
 
-Run only the stop and copy pair for the service being swapped. Do not stop all
-four volume owners at once; stopping Authentik early breaks Papra OIDC logins.
+Run only the block for the service being swapped; do not run all four at once.
+Do not stop all four volume owners together; stopping Authentik early breaks
+Papra OIDC logins.
 
 Stop the owning container before copying. The tool refuses a non-empty
 destination. If a copy fails partway, remove only that failed partial copy;
 never delete a populated destination.
 
 ```bash
+set -euo pipefail
 set -a
 . ./.env
 set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+```
 
-# Authentik
-docker stop --time 60 authentik-postgresql-1
-./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
-
-# Tandoor
-docker stop --time 60 tandoor-web_recipes-1
-./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
-
-# Checkmate
-docker stop --time 60 checkmate-mongodb-1
-./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
-
+```bash
 # Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
+```
+
+```bash
+# Tandoor
+docker stop --time 60 tandoor-web_recipes-1
+./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
+```
+
+```bash
+# Checkmate
+docker stop --time 60 checkmate-mongodb-1
+./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
+```
+
+```bash
+# Authentik
+docker stop --time 60 authentik-postgresql-1
+./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
 ```
 
 Immich's Redis data is a pure cache. Start it with an empty
