@@ -161,6 +161,24 @@ if value != expected:
   fi
 }
 
+assert_service_env_absent() {
+  local rendered="$1"
+  local service="$2"
+  local key="$3"
+  local message="$4"
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+service, key = sys.argv[1], sys.argv[2]
+if key in data.get("services", {}).get(service, {}).get("environment", {}):
+    raise SystemExit(0)
+raise SystemExit(1)
+' "$service" "$key" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
+
 assert_papra_provider() {
   local rendered="$1"
   local client_id="$2"

@@ -8,8 +8,9 @@ services:
     stop_grace_period: 60s
     env_file:
       - .env
-      - .secrets
     environment:
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       DB_CONNECTION_STRING: mongodb://mongodb:27017/uptime_db
       CLIENT_HOST: https://status.${BASE_DOMAIN}
       CLIENT_CONFIG_CLIENT_HOST: https://status.${BASE_DOMAIN}
@@ -54,11 +55,9 @@ services:
     container_name: checkmate-capture-1
     image: ghcr.io/bluewave-labs/capture:latest@sha256:c4917c572b12d4068b5987494132da728363591ec9227a116ef07cd77222292f
     restart: unless-stopped
-    env_file:
-      - .secrets
     environment:
       GIN_MODE: release
-      API_SECRET: ${CAPTURE_API_SECRET}
+      API_SECRET: ${CAPTURE_API_SECRET:?CAPTURE_API_SECRET is required}
     volumes:
       - /etc/os-release:/etc/os-release:ro
       - /mnt/old-home:/mnt/old-home:ro

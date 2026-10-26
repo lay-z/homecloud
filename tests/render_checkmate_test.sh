@@ -28,16 +28,31 @@ assert_mount "$rendered_json" /var/run/docker.sock /var/run/docker.sock 'checkma
 assert_mount_read_only "$rendered_json" checkmate /var/run/docker.sock /var/run/docker.sock 'docker socket is not read-only'
 assert_no_service_mount "$rendered_json" mongodb /var/run/docker.sock /var/run/docker.sock 'mongodb must not mount the docker socket'
 assert_no_service_mount "$rendered_json" capture /var/run/docker.sock /var/run/docker.sock 'capture must not mount the docker socket'
-assert_mount "$rendered_json" /etc/os-release /etc/os-release 'capture os-release bind missing' capture
-assert_mount "$rendered_json" /mnt/old-home /mnt/old-home 'capture old-home bind missing' capture
-assert_mount "$rendered_json" /mnt/seagate /mnt/seagate 'capture seagate bind missing' capture
+assert_mount_read_only "$rendered_json" capture /etc/os-release /etc/os-release 'capture os-release bind is not read-only'
+assert_mount_read_only "$rendered_json" capture /mnt/old-home /mnt/old-home 'capture old-home bind is not read-only'
+assert_mount_read_only "$rendered_json" capture /mnt/seagate /mnt/seagate 'capture seagate bind is not read-only'
+assert_render_contains "$rendered" 'stop_grace_period: 1m0s' 'stop grace period missing'
+assert_render_contains "$rendered" 'sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de' 'checkmate image digest missing'
+assert_render_contains "$rendered" 'sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907' 'mongo image digest missing'
+assert_render_contains "$rendered" 'sha256:c4917c572b12d4068b5987494132da728363591ec9227a116ef07cd77222292f' 'capture image digest missing'
+assert_render_contains "$rendered" 'http://localhost:52346/livez' 'checkmate healthcheck missing'
+assert_render_contains "$rendered" "db.adminCommand('ping')" 'mongodb healthcheck missing'
 assert_service_env "$rendered_json" checkmate DB_CONNECTION_STRING mongodb://mongodb:27017/uptime_db 'database connection string missing'
 assert_service_env "$rendered_json" checkmate CLIENT_HOST https://status.example.test 'client host missing'
 assert_service_env "$rendered_json" checkmate CLIENT_CONFIG_CLIENT_HOST https://status.example.test 'client config host missing'
 assert_service_env "$rendered_json" checkmate JWT_SECRET test-jwt 'checkmate JWT secret missing'
 assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY test-encryption 'checkmate encryption key missing'
-assert_service_env "$rendered_json" checkmate CAPTURE_API_SECRET test-capture 'checkmate capture secret missing'
+assert_service_env_absent "$rendered_json" checkmate CAPTURE_API_SECRET 'checkmate must not receive the capture secret'
 assert_service_env "$rendered_json" capture API_SECRET test-capture 'capture API secret missing'
 assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missing'
+assert_service_env_absent "$rendered_json" capture JWT_SECRET 'capture must not receive JWT_SECRET'
+assert_service_env_absent "$rendered_json" capture ENCRYPTION_KEY 'capture must not receive ENCRYPTION_KEY'
+assert_service_env_absent "$rendered_json" capture CAPTURE_API_SECRET 'capture must not receive the raw capture secret'
+
+cp "$TMP/checkmate/.secrets" "$TMP/checkmate/.secrets-missing"
+sed -i '/^CAPTURE_API_SECRET=/d' "$TMP/checkmate/.secrets-missing"
+if render_service checkmate .env .secrets-missing >/dev/null 2>&1; then
+  fail "rendered without CAPTURE_API_SECRET"
+fi
 
 printf 'checkmate render tests passed\n'
