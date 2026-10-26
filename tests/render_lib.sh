@@ -140,3 +140,31 @@ if value != expected:
     fail "$message"
   fi
 }
+
+assert_papra_provider() {
+  local rendered="$1"
+  local client_id="$2"
+  local client_secret="$3"
+  local base_domain="$4"
+
+  if ! python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+provider = json.loads(data["services"]["papra"]["environment"]["AUTH_PROVIDERS_CUSTOMS"])[0]
+client_id, client_secret, base_domain = sys.argv[1], sys.argv[2], sys.argv[3]
+expected = {
+    "providerId": "authentik",
+    "providerName": "authentik",
+    "providerIconUrl": f"https://id.{base_domain}/static/dist/assets/icons/icon.png",
+    "clientId": client_id,
+    "clientSecret": client_secret,
+    "type": "oidc",
+    "discoveryUrl": f"https://id.{base_domain}/application/o/papra/.well-known/openid-configuration",
+    "scopes": ["openid", "profile", "email"],
+}
+if provider != expected:
+    raise SystemExit(1)
+' "$client_id" "$client_secret" "$base_domain" <<< "$rendered"; then
+    fail "Papra OIDC provider config is wrong"
+  fi
+}

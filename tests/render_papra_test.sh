@@ -26,6 +26,7 @@ assert_service_env "$rendered_json" papra AUTH_PROVIDERS_EMAIL_IS_ENABLED false 
 assert_service_env "$rendered_json" papra AUTH_SECRET test-secret 'auth secret missing'
 assert_service_env "$rendered_json" papra PAPRA_OIDC_CLIENT_ID test-client-id 'OIDC client id not loaded'
 assert_service_env "$rendered_json" papra PAPRA_OIDC_CLIENT_SECRET test-client-secret 'OIDC client secret not loaded'
+assert_papra_provider "$rendered_json" test-client-id test-client-secret example.test
 
 if grep -Fq 'priyav.dev' <<< "$rendered"; then
   fail "production domain leaked into rendered compose"
