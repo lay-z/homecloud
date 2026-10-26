@@ -1,0 +1,36 @@
+name: tandoor
+
+services:
+  db_recipes:
+    container_name: tandoor-db_recipes-1
+    image: postgres:16-alpine@sha256:23e88eb049fd5d54894d70100df61d38a49ed97909263f79d4ff4c30a5d5fca2
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .secrets
+    volumes:
+      - ${DATA_ROOT}/tandoor/postgresql:/var/lib/postgresql/data
+
+  web_recipes:
+    container_name: tandoor-web_recipes-1
+    image: vabene1111/recipes:latest@sha256:f6c58afdea7a721d079ebd6ee5483f2c9da77dd1e709e16d60a82c218e80a451
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .secrets
+    environment:
+      TZ: ${TZ}
+      ALLOWED_HOSTS: recipes.${BASE_DOMAIN}
+    ports:
+      - "127.0.0.1:8979:80"
+    volumes:
+      - ${DATA_ROOT}/tandoor/staticfiles:/opt/recipes/staticfiles
+      - ${DATA_ROOT}/tandoor/mediafiles:/opt/recipes/mediafiles
+    depends_on:
+      - db_recipes
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tandoor.rule=Host(`recipes.${BASE_DOMAIN}`)
+      - traefik.http.routers.tandoor.entrypoints=websecure
+      - traefik.http.routers.tandoor.tls.certresolver=le
+      - traefik.http.services.tandoor.loadbalancer.server.url=http://127.0.0.1:8979
