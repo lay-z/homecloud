@@ -1679,6 +1679,7 @@ git commit -m "test: cover phase 2 service rendering and data safety"
 ### Task 9: Update the docs and the server move runbook
 
 **Files:**
+- Modify: `.gitignore`
 - Modify: `README.md`
 - Modify: `docs/operations.md`
 - Modify: `docs/adopt-existing-server.md`
@@ -1742,7 +1743,127 @@ Do not delete the old volumes until the new containers have been running and
 verified for an agreed period.
 ````
 
-- [ ] **Step 3: Replace the adoption volume section**
+- [ ] **Step 3: Harden the adoption runbook preamble, backup, prepare, cutover, and rollback**
+
+In `docs/adopt-existing-server.md`, replace the intro paragraph with:
+
+````markdown
+This runbook is for the reference server, which currently runs nginx and
+per-service compose files under `~/<service>/`. All services are already
+converted to Traefik routes. Sections 1-5 and 9 are the Phase 2 work done while
+nginx owns ports 80 and 443. Section 6 is the Phase 3 ingress cutover and must
+only run when explicitly scheduled.
+````
+
+Replace the whole `## 1. Back up` section with:
+
+````markdown
+## 1. Back up
+
+```bash
+backup="$HOME/backups/stack-$(date +%F-%H%M)"
+mkdir -p "$backup"
+for service in jellyfin immich tandoor authentik papra checkmate; do
+  file="$HOME/$service/docker-compose.yml"
+  [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
+  docker compose -f "$file" config \
+    > "$backup/$service.compose.resolved.yml" 2>/dev/null || true
+  cp "$file" "$backup/" 2>/dev/null || true
+  cp "$HOME/$service/.env" "$backup/$service.env" 2>/dev/null || true
+done
+sudo tar -C /home/layz -czf "$backup/data-root.tgz" \
+  jellyfin immich tandoor authentik papra checkmate traefik
+cp -a "$HOME/nginx/examples/user_conf.d" "$backup/nginx-user_conf.d"
+sudo tar -C "$HOME/nginx/examples" -czf "$backup/letsencrypt.tgz" letsencrypt
+docker volume ls > "$backup/docker-volumes.txt"
+```
+
+If the backup fails, stop and fix it before continuing.
+
+The old named volumes are retained and are the rollback copy for named-volume
+services; do not delete them until verification.
+
+Never commit the backup directory.
+````
+
+Replace the whole `## 2. Prepare the instance` section with:
+
+````markdown
+## 2. Prepare the instance
+
+```bash
+git clone <repo> "$HOME/stack"
+cd "$HOME/stack"
+cp .env.example .env
+```
+
+Set at least:
+
+```dotenv
+BASE_DOMAIN=priyav.dev
+ACME_EMAIL=<your email>
+DATA_ROOT=/home/layz
+PUID=1000
+PGID=1000
+ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate
+```
+
+All six services are migrated and have Traefik routes. Keep nginx running until
+Phase 3; do not cut over ingress yet.
+
+Create `<service>/.env` and `<service>/.secrets` from the templates. Copy
+existing non-secret values into `.env` and existing secrets into `.secrets`.
+Set `IMMICH_UPLOAD_LOCATION` to the old `UPLOAD_LOCATION`. `chmod 600` each
+`.secrets`. Do not let `./stack init` generate replacements for existing
+secrets. Do not commit either file.
+
+Run `./stack init` and `./stack check` after the files are populated.
+````
+
+Replace the whole `## 6. Cut over ingress` section with:
+
+````markdown
+## 6. Cut over ingress
+
+Do this only after section 9 is complete for every service. Stop nginx without
+removing data:
+
+```bash
+docker compose -f "$HOME/nginx/examples/docker-compose.yml" down
+./stack up
+```
+
+Do not stop an old project after its new project is running. Both use the same
+project name, so `docker compose down` would remove the new containers.
+````
+
+Replace the whole `## 8. Rollback` section with:
+
+````markdown
+## 8. Rollback
+
+```bash
+./stack down
+
+docker compose -f "$HOME/nginx/examples/docker-compose.yml" up -d
+
+for service in jellyfin immich tandoor authentik papra checkmate; do
+  file="$HOME/$service/docker-compose.yml"
+  [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
+  docker compose -f "$file" up -d
+done
+```
+
+Rollback starts the old stacks on the old volumes. Writes made to the new bind
+mounts after the swap are not copied back. If those writes are needed, copy the
+bind path back into the old volume before starting the old stack; otherwise
+accept the loss.
+
+Keep the old compose files and nginx certificates until the new stack has been
+stable for an agreed period.
+````
+
+- [ ] **Step 4: Replace the adoption volume section**
 
 In `docs/adopt-existing-server.md`, replace the whole `## 4. Migrate old named
 volumes` section with:
@@ -1751,7 +1872,7 @@ volumes` section with:
 ## 4. Migrate old named volumes
 
 Run only the stop and copy pair for the service being swapped. Do not stop all
-four at once: Authentik and Papra are dependencies for other services' logins.
+four volume owners at once; stopping Authentik early breaks Papra OIDC logins.
 
 Stop the owning container, then copy its volume into the bind path. Never pass
 `-v` to `docker compose down`. The tool refuses a non-empty destination. If a
@@ -1809,7 +1930,7 @@ existing database.
 Do not remove the old volumes until the new stack has been verified.
 ````
 
-- [ ] **Step 4: Add the soft-swap runbook**
+- [ ] **Step 5: Add the soft-swap runbook**
 
 At the end of `docs/adopt-existing-server.md`, append:
 
@@ -1834,8 +1955,8 @@ For every service:
 
 3. Start only the converted service from this repo. Add
    `-f <service>/compose.override.yaml` when that file exists. Do not run
-   `./stack up`; that starts Traefik on ports 80 and 443 and would conflict
-   with nginx.
+   `./stack up` during the Phase 2 soft swaps; section 6 is the Phase 3
+   cutover.
 4. Verify the public URL still works through nginx.
 
 Checkmate's old file is `docker-compose.yaml`; the others are
@@ -1873,13 +1994,16 @@ curl -sI https://status.priyav.dev/ | head
 `docker compose -f` does not auto-merge `compose.override.yaml`; pass it
 explicitly when present.
 
-Recommended order, lowest risk first:
+Recommended order for the five Phase 2 services, lowest risk first:
 
 1. Immich (photos and Postgres already bind-mounted; only caches change)
 2. Tandoor (Postgres and media already bind-mounted; static files copy)
 3. Checkmate (Mongo data copy)
 4. Authentik (Postgres data copy; verify login before moving on)
 5. Papra (no data move)
+
+Jellyfin is already converted; use it as a first soft-swap validation if
+desired.
 
 ### Validate through Traefik without touching nginx
 
@@ -1936,7 +2060,7 @@ curl -sk -H 'Host: flix.priyav.dev' https://127.0.0.1:8443/ -o /dev/null -w '%{h
 Expect 200, 302, 401, or 403; a 404 means the router is missing. Certificate
 issuance cannot succeed while nginx owns port 80; `-k` accepts Traefik's
 fallback certificate. Repeat with each migrated Host. Then stop the staging
-instance and remove the override and staging ACME file:
+instance and remove the staging override and staging ACME file:
 
 ```bash
 docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml down
@@ -1957,10 +2081,11 @@ Writes made to the new bind mounts after the swap are not copied back. If those
 writes are needed, copy the bind path back into the old volume before starting
 the old stack; otherwise accept the loss.
 
-Do not run `./stack down -v`. Do not stop nginx in this phase.
+Do not run `./stack down -v`. Do not stop nginx until the Phase 3 cutover in
+section 6.
 ````
 
-- [ ] **Step 5: Update `AGENTS.md`**
+- [ ] **Step 6: Update `AGENTS.md`**
 
 Replace the `## Current phase` section in `AGENTS.md` with:
 
@@ -1973,10 +2098,13 @@ and 443; Phase 3 performs the ingress cutover and adds the update timer. Do not
 stop nginx until the cutover is explicitly scheduled.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
+
+Add `*/compose.staging.yaml` to `.gitignore` so the staging override stays
+untracked, then:
 
 ```bash
-git add README.md docs/operations.md docs/adopt-existing-server.md AGENTS.md
+git add .gitignore README.md docs/operations.md docs/adopt-existing-server.md AGENTS.md docs/superpowers/plans/2026-10-26-phase2-service-migration.md
 git commit -m "docs: add phase 2 service migration runbook"
 ```
 
@@ -2054,8 +2182,11 @@ stop nginx.
       secret.
 - [ ] If any other existing secret is empty, generate one with
       `openssl rand -hex 32`; otherwise `stack check` rejects the empty secret.
+- [ ] Set `IMMICH_UPLOAD_LOCATION` to the old `UPLOAD_LOCATION` path.
+- [ ] `chmod 600` every `*/.secrets` file.
 - [ ] Set `DATA_ROOT=/home/layz`, `BASE_DOMAIN=priyav.dev`, and
-      `ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate`.
+      `ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate` so
+      all six migrated services are enabled.
 - [ ] Run `./stack init` and `./stack check` on the server.
 - [ ] Copy `jellyfin/compose.override.yaml.example` to
       `jellyfin/compose.override.yaml` for `/dev/dri` with `cp -n`, so an
@@ -2065,7 +2196,8 @@ stop nginx.
       Docker socket.
 - [ ] For each service, migrate only that service's volumes using the matching
       stop and copy pair in section 4, immediately before the swap. Do not stop
-      all four at once; Authentik and Papra are login dependencies.
+      all four volume owners at once; stopping Authentik early breaks Papra OIDC
+      logins.
 - [ ] Complete the soft-swap for every service and verify each public URL
       through nginx. Also run the staging Traefik with `-p traefik-staging`,
       `traefik/compose.staging.yaml`, and a separate `acme-staging.json`; remove
@@ -2073,6 +2205,9 @@ stop nginx.
 - [ ] Do not stop an old project after its new project is running; both use the
       same project name, so `docker compose down` would remove the new
       containers.
+- [ ] Roll back with nginx and all six old services, using the `.yml`/`.yaml`
+      fallback. Post-swap writes to the new binds are lost on rollback; copy
+      them back into the old volumes first if needed.
 - [ ] Keep nginx running. Leave the old volumes in place as the rollback copy;
       do not delete them until verification.
 - [ ] Do not run `./stack down -v`.

@@ -2,6 +2,7 @@
 */.env
 */.secrets
 */compose.override.yaml
+*/compose.staging.yaml
 .namecheap.env
 *.bak
 *.log
