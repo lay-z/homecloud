@@ -1712,23 +1712,24 @@ Immediately after the `## Data safety` section, insert:
 ## Migrating existing named volumes
 
 Stop the owning container before copying. The tool refuses a non-empty
-destination, so remove a partially-created target first.
+destination. If a copy fails partway, remove only that failed partial copy;
+never delete a populated destination.
 
 ```bash
 set -a
 . ./.env
 set +a
 
-docker stop authentik-postgresql-1
+docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
 
-docker stop tandoor-web_recipes-1
+docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
 
-docker stop checkmate-mongodb-1
+docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
 
-docker stop immich_machine_learning
+docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
 ```
 
@@ -1749,20 +1750,25 @@ volumes` section with:
 ````markdown
 ## 4. Migrate old named volumes
 
-Stop each owning container, then copy its volume into the bind path. Never pass
-`-v` to `docker compose down`.
+Run only the stop and copy pair for the service being swapped. Do not stop all
+four at once: Authentik and Papra are dependencies for other services' logins.
+
+Stop the owning container, then copy its volume into the bind path. Never pass
+`-v` to `docker compose down`. The tool refuses a non-empty destination. If a
+copy fails partway, remove only that failed partial copy; never delete a
+populated destination.
 
 ```bash
-docker stop authentik-postgresql-1
+docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database /home/layz/authentik/database
 
-docker stop tandoor-web_recipes-1
+docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles /home/layz/tandoor/staticfiles
 
-docker stop checkmate-mongodb-1
+docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data /home/layz/checkmate/mongo-data
 
-docker stop immich_machine_learning
+docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache /home/layz/immich/model-cache
 ```
 
@@ -1782,9 +1788,10 @@ and move the old `DB_PASSWORD` into `immich/.secrets`, not `immich/.env`.
 Put existing secrets in each service's `.secrets`, not `.env`; `--env-file`
 order makes `.secrets` win, and `stack check` validates it.
 
-For Papra, set `PAPRA_OIDC_CLIENT_ID` to the existing client ID, put
-`AUTH_SECRET` in `papra/.secrets`, and rotate the OIDC client secret in
-Authentik. Put the new URL-safe secret in `papra/.secrets`.
+For Papra, set `PAPRA_OIDC_CLIENT_ID` to the existing client ID and preserve
+`AUTH_SECRET` in `papra/.secrets` so existing sessions stay valid. Rotate only
+the OIDC client secret in Authentik, immediately before the Papra swap, and put
+the new URL-safe secret in `papra/.secrets`.
 
 For Checkmate, preserve `ENCRYPTION_KEY` and `CAPTURE_API_SECRET`. Generate a
 new `JWT_SECRET` with `openssl rand -hex 32` and put them in
@@ -1815,7 +1822,8 @@ the repo root (`$HOME/stack`).
 
 For every service:
 
-1. Migrate its volumes with the commands in section 4.
+1. Migrate only the volumes for this service using the matching pair in
+   section 4, immediately before the swap.
 2. Stop the old project without removing data:
 
    ```bash
@@ -1836,7 +1844,7 @@ Checkmate's old file is `docker-compose.yaml`; the others are
 Example for Jellyfin:
 
 ```bash
-cp jellyfin/compose.override.yaml.example jellyfin/compose.override.yaml
+cp -n jellyfin/compose.override.yaml.example jellyfin/compose.override.yaml
 docker compose -f "$HOME/jellyfin/docker-compose.yml" down
 docker compose --env-file .env --env-file jellyfin/.env --env-file jellyfin/.secrets -f jellyfin/compose.yaml -f jellyfin/compose.override.yaml up -d
 curl -sI https://flix.priyav.dev/ | head
@@ -1856,7 +1864,7 @@ and no host override in this phase.
 Example for Checkmate:
 
 ```bash
-cp checkmate/compose.override.yaml.example checkmate/compose.override.yaml
+cp -n checkmate/compose.override.yaml.example checkmate/compose.override.yaml
 docker compose -f "$HOME/checkmate/docker-compose.yaml" down
 docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.secrets -f checkmate/compose.yaml -f checkmate/compose.override.yaml up -d
 curl -sI https://status.priyav.dev/ | head
@@ -1878,11 +1886,12 @@ Recommended order, lowest risk first:
 Do not run `./stack up` until Phase 3. To prove Traefik can serve a converted
 service while nginx still owns 80/443, run a second Traefik on 8080/8443.
 
-Create `traefik/compose.override.yaml` (gitignored) with:
+Create `traefik/compose.staging.yaml` (gitignored) with:
 
 ```yaml
 services:
   traefik:
+    container_name: traefik-staging
     command:
       - --global.checkNewVersion=false
       - --global.sendAnonymousUsage=false
@@ -1909,6 +1918,10 @@ services:
 Use a separate ACME file so staging writes cannot disturb production state:
 
 ```bash
+set -a
+. ./.env
+set +a
+
 touch "$DATA_ROOT/traefik/acme-staging.json"
 chmod 600 "$DATA_ROOT/traefik/acme-staging.json"
 ```
@@ -1916,17 +1929,18 @@ chmod 600 "$DATA_ROOT/traefik/acme-staging.json"
 Start it and probe the Host header:
 
 ```bash
-docker compose --env-file .env -f traefik/compose.yaml -f traefik/compose.override.yaml up -d
+docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml up -d
 curl -sk -H 'Host: flix.priyav.dev' https://127.0.0.1:8443/ -o /dev/null -w '%{http_code}\n'
 ```
 
-Expect a non-5xx code. Certificate issuance cannot succeed while nginx owns
-port 80; `-k` accepts Traefik's fallback certificate. Repeat with each migrated
-Host. Then stop the staging instance and remove the override:
+Expect 200, 302, 401, or 403; a 404 means the router is missing. Certificate
+issuance cannot succeed while nginx owns port 80; `-k` accepts Traefik's
+fallback certificate. Repeat with each migrated Host. Then stop the staging
+instance and remove the override and staging ACME file:
 
 ```bash
-docker compose --env-file .env -f traefik/compose.yaml -f traefik/compose.override.yaml down
-rm traefik/compose.override.yaml
+docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml down
+rm traefik/compose.staging.yaml "$DATA_ROOT/traefik/acme-staging.json"
 ```
 
 Rollback for a single service: stop the new project
@@ -1938,6 +1952,10 @@ file="$HOME/<service>/docker-compose.yml"
 [[ -f "$file" ]] || file="$HOME/<service>/docker-compose.yaml"
 docker compose -f "$file" up -d
 ```
+
+Writes made to the new bind mounts after the swap are not copied back. If those
+writes are needed, copy the bind path back into the old volume before starting
+the old stack; otherwise accept the loss.
 
 Do not run `./stack down -v`. Do not stop nginx in this phase.
 ````
@@ -2018,8 +2036,8 @@ Do not push until the user asks.
 Run these only after the code tasks pass and the plan has been reviewed. Do not
 stop nginx.
 
-- [ ] Back up `/home/layz`, root `.env`, every `*/.env`, every `*/.secrets`, and
-      `/home/layz/traefik/acme.json`.
+- [ ] Back up `/home/layz` (including a data-root archive), root `.env`, every
+      `*/.env`, every `*/.secrets`, and `/home/layz/traefik/acme.json`.
 - [ ] Create the server `.env` files from the new templates and copy existing
       values into `.env` / `.secrets` before running `./stack init`. Do not let
       `init` generate replacements for existing secrets.
@@ -2030,20 +2048,33 @@ stop nginx.
       Do not let `stack init` replace them.
 - [ ] Generate a new Checkmate `JWT_SECRET` with `openssl rand -hex 32`; do not
       reuse the exposed JWT secret.
-- [ ] Rotate the Papra OIDC client secret in Authentik and put the new URL-safe
-      value in `papra/.secrets`; do not reuse the exposed secret.
+- [ ] Rotate only the Papra OIDC client secret in Authentik immediately before
+      the Papra swap, keep `AUTH_SECRET` so existing sessions stay valid, and put
+      the new URL-safe value in `papra/.secrets`; do not reuse the exposed
+      secret.
 - [ ] If any other existing secret is empty, generate one with
       `openssl rand -hex 32`; otherwise `stack check` rejects the empty secret.
 - [ ] Set `DATA_ROOT=/home/layz`, `BASE_DOMAIN=priyav.dev`, and
       `ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate`.
 - [ ] Run `./stack init` and `./stack check` on the server.
 - [ ] Copy `jellyfin/compose.override.yaml.example` to
-      `jellyfin/compose.override.yaml` for `/dev/dri`.
+      `jellyfin/compose.override.yaml` for `/dev/dri` with `cp -n`, so an
+      existing host override is not overwritten.
 - [ ] Copy `checkmate/compose.override.yaml.example` to
-      `checkmate/compose.override.yaml` if group 957 owns the Docker socket.
-- [ ] Migrate volumes with `tools/migrate-volume.sh` in the documented order.
-- [ ] Soft-swap one service at a time and verify its public URL through nginx.
-- [ ] Keep nginx running. Leave the old volumes in place.
+      `checkmate/compose.override.yaml` with `cp -n` if group 957 owns the
+      Docker socket.
+- [ ] For each service, migrate only that service's volumes using the matching
+      stop and copy pair in section 4, immediately before the swap. Do not stop
+      all four at once; Authentik and Papra are login dependencies.
+- [ ] Complete the soft-swap for every service and verify each public URL
+      through nginx. Also run the staging Traefik with `-p traefik-staging`,
+      `traefik/compose.staging.yaml`, and a separate `acme-staging.json`; remove
+      both staging files when done.
+- [ ] Do not stop an old project after its new project is running; both use the
+      same project name, so `docker compose down` would remove the new
+      containers.
+- [ ] Keep nginx running. Leave the old volumes in place as the rollback copy;
+      do not delete them until verification.
 - [ ] Do not run `./stack down -v`.
 
 ## Definition of done
