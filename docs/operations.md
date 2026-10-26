@@ -26,7 +26,8 @@ independent backups.
 
 Run only the block for the service being swapped; do not run all four at once.
 Do not stop all four volume owners together; stopping Authentik early breaks
-Papra OIDC logins.
+Papra OIDC logins. Restart or swap the service immediately after its block; do
+not leave it down.
 
 Stop the owning container before copying. The tool refuses a non-empty
 destination. If a copy fails partway, remove only that failed partial copy;

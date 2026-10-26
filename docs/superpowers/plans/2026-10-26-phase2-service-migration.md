@@ -1714,7 +1714,8 @@ Immediately after the `## Data safety` section, insert:
 
 Run only the block for the service being swapped; do not run all four at once.
 Do not stop all four volume owners together; stopping Authentik early breaks
-Papra OIDC logins.
+Papra OIDC logins. Restart or swap the service immediately after its block; do
+not leave it down.
 
 Stop the owning container before copying. The tool refuses a non-empty
 destination. If a copy fails partway, remove only that failed partial copy;
@@ -1793,6 +1794,10 @@ Replace the whole `## 1. Back up` section with:
 ````markdown
 ## 1. Back up
 
+Run this section once, before any section 9 swap. Do not re-run it after a
+service has been converted: the old and new projects share names, so it would
+stop the new stack and restart the old one against old volumes.
+
 ```bash
 set -euo pipefail
 umask 077
@@ -1814,12 +1819,19 @@ for service in jellyfin immich tandoor authentik papra checkmate; do
   cp "$HOME/$service/.env" "$backup/$service.env"
 done
 
+nginx_file="$HOME/nginx/examples/docker-compose.yml"
+[[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
+cp "$nginx_file" "$backup/nginx-compose.yml"
+cp -a "$HOME/nginx/examples/user_conf.d" "$backup/nginx-user_conf.d"
+sudo tar -C "$HOME/nginx/examples" -czf "$backup/letsencrypt.tgz" letsencrypt
+
 for service in jellyfin immich tandoor authentik papra checkmate; do
   file="$HOME/$service/docker-compose.yml"
   [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
   docker compose -f "$file" down
 done
 
+# /home/layz is the reference-server path; adjust if DATA_ROOT differs.
 tar_paths=()
 for path in jellyfin immich tandoor authentik papra checkmate traefik; do
   [[ -e "/home/layz/$path" ]] && tar_paths+=("$path")
@@ -1827,12 +1839,6 @@ done
 if (( ${#tar_paths[@]} )); then
   sudo tar -C /home/layz -czf "$backup/data-root.tgz" "${tar_paths[@]}"
 fi
-
-nginx_file="$HOME/nginx/examples/docker-compose.yml"
-[[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
-cp "$nginx_file" "$backup/nginx-compose.yml"
-cp -a "$HOME/nginx/examples/user_conf.d" "$backup/nginx-user_conf.d"
-sudo tar -C "$HOME/nginx/examples" -czf "$backup/letsencrypt.tgz" letsencrypt
 
 if [[ -f "$HOME/stack/.env" ]]; then
   cp "$HOME/stack/.env" "$backup/stack.env"
@@ -1857,8 +1863,18 @@ stopped. Media under `/mnt/seagate` is not included; it is not migrated. The
 retained old named volumes and bind mounts are the migration rollback path; do
 not treat the tar as a database-consistent backup.
 
-If the block fails after stopping the services, restart them with section 8's
-commands before continuing.
+If the block fails after stopping the services, restart them before continuing:
+
+```bash
+for service in jellyfin immich tandoor authentik papra checkmate; do
+  file="$HOME/$service/docker-compose.yml"
+  [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
+  docker compose -f "$file" up -d
+done
+```
+
+The section 1 backup stops all six services once for a quiesced copy; the
+section 4 volume blocks stop one owner at a time.
 
 Never commit the backup directory.
 ````
@@ -1980,7 +1996,8 @@ volumes` section with:
 
 Run only the block for the service being swapped; do not run all four at once.
 Do not stop all four volume owners together; stopping Authentik early breaks
-Papra OIDC logins.
+Papra OIDC logins. Restart or swap the service immediately after its block; do
+not leave it down.
 
 Stop the owning container, then copy its volume into the bind path. Never pass
 `-v` to `docker compose down`. The tool refuses a non-empty destination. If a
@@ -2090,6 +2107,7 @@ For every Phase 2 service, plus the Jellyfin soft-swap:
 2. Stop the old project without removing data:
 
    ```bash
+   set -euo pipefail
    file="$HOME/<service>/docker-compose.yml"
    [[ -f "$file" ]] || file="$HOME/<service>/docker-compose.yaml"
    docker compose -f "$file" down
@@ -2329,8 +2347,8 @@ Do not push until the user asks.
 Run these only after the code tasks pass and the plan has been reviewed. Do not
 stop nginx.
 
-- [ ] Back up `/home/layz` (including a data-root archive), root `.env`, every
-      `*/.env`, every `*/.secrets`, and `/home/layz/traefik/acme.json`.
+- [ ] Back up the data-root service directories and `traefik` (or `/home/layz`),
+      the DB dumps, and the env/secret files.
 - [ ] Create the server `.env` files from the new templates and copy existing
       values into `.env` / `.secrets` before running `./stack init`. Do not let
       `init` generate replacements for existing secrets.
