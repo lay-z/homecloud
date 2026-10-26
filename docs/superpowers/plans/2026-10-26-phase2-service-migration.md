@@ -517,6 +517,45 @@ assert_no_volumes() {
     fail "rendered compose has a named or anonymous volume"
   fi
 }
+
+assert_mount() {
+  local rendered="$1"
+  local source="$2"
+  local target="$3"
+  local message="$4"
+
+  if ! python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+source, target = sys.argv[1], sys.argv[2]
+for service in data.get("services", {}).values():
+    for volume in service.get("volumes", []):
+        if volume.get("source") == source and volume.get("target") == target:
+            raise SystemExit(0)
+raise SystemExit(1)
+' "$source" "$target" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
+
+assert_service_env() {
+  local rendered="$1"
+  local service="$2"
+  local key="$3"
+  local expected="$4"
+  local message="$5"
+
+  if ! python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+service, key, expected = sys.argv[1], sys.argv[2], sys.argv[3]
+value = data.get("services", {}).get(service, {}).get("environment", {}).get(key)
+if value != expected:
+    raise SystemExit(1)
+' "$service" "$key" "$expected" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
 ```
 
 - [ ] **Step 2: Write the fixtures used by this task**
@@ -562,6 +601,7 @@ copy_service immich
 install_fixture immich
 
 rendered="$(render_service immich .env .secrets)"
+rendered_json="$(render_service_json immich .env .secrets)"
 
 assert_render_contains "$rendered" 'name: immich' 'project name missing'
 assert_render_contains "$rendered" "Host(\`photos.example.test\`)" 'host rule missing'
@@ -570,7 +610,13 @@ assert_render_contains "$rendered" 'host_ip: 127.0.0.1' 'port is not loopback-bo
 assert_render_contains "$rendered" "$TMP/data/immich/postgres" 'postgres bind missing'
 assert_render_contains "$rendered" "$TMP/data/immich/model-cache" 'model cache bind missing'
 assert_render_contains "$rendered" "$TMP/data/immich/redis" 'redis bind missing'
-assert_no_volumes "$(render_service_json immich .env .secrets)"
+assert_no_volumes "$rendered_json"
+assert_mount "$rendered_json" /tmp/immich-media /data 'uploads bind missing or wrong target'
+assert_mount "$rendered_json" "$TMP/data/immich/postgres" /var/lib/postgresql/data 'postgres bind missing or wrong target'
+assert_mount "$rendered_json" "$TMP/data/immich/model-cache" /cache 'model cache bind missing or wrong target'
+assert_mount "$rendered_json" "$TMP/data/immich/redis" /data 'redis bind missing or wrong target'
+assert_service_env "$rendered_json" immich-server DB_PASSWORD test-password 'immich-server is not loading DB_PASSWORD from .secrets'
+assert_service_env "$rendered_json" database POSTGRES_PASSWORD test-password 'database password missing'
 
 printf 'immich render tests passed\n'
 ```
@@ -590,6 +636,8 @@ Create `immich/.env.example` with exactly:
 
 ```dotenv
 # Upload location on the host. May be outside DATA_ROOT for large libraries.
+# Existing servers: set this to the old UPLOAD_LOCATION value
+# (for example /mnt/seagate/Media/Photos).
 IMMICH_UPLOAD_LOCATION=/srv/media/immich
 
 # Database values. The password belongs in .secrets.
@@ -600,6 +648,7 @@ DB_DATABASE_NAME=immich
 Create `immich/.secrets.example` with exactly:
 
 ```dotenv
+# Existing servers: copy the old DB_PASSWORD here, not into .env.
 DB_PASSWORD=
 ```
 
@@ -1558,7 +1607,9 @@ mkdir -p /home/layz/immich/redis /home/layz/checkmate/mongo-configdb
 Immich uploads (`/mnt/seagate/Media/Photos`), Immich Postgres
 (`/home/layz/immich/postgres`), Jellyfin media (`/mnt/seagate`), Tandoor
 Postgres/media, Authentik media/certs/templates, and Papra app-data are already
-bind mounts and need no copy.
+bind mounts and need no copy. Set `IMMICH_UPLOAD_LOCATION` to the old
+`UPLOAD_LOCATION` value (`/mnt/seagate/Media/Photos` on the reference server),
+and move the old `DB_PASSWORD` into `immich/.secrets`, not `immich/.env`.
 
 Do not remove the old volumes until the new stack has been verified.
 ````
