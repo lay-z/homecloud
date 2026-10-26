@@ -171,6 +171,21 @@ cmd_init() {
       jellyfin)
         mkdir -p "$DATA_ROOT/jellyfin/config" "$DATA_ROOT/jellyfin/cache"
         ;;
+      immich)
+        mkdir -p "$DATA_ROOT/immich/postgres" "$DATA_ROOT/immich/model-cache" "$DATA_ROOT/immich/redis"
+        ;;
+      tandoor)
+        mkdir -p "$DATA_ROOT/tandoor/postgresql" "$DATA_ROOT/tandoor/staticfiles" "$DATA_ROOT/tandoor/mediafiles"
+        ;;
+      authentik)
+        mkdir -p "$DATA_ROOT/authentik/database" "$DATA_ROOT/authentik/media" "$DATA_ROOT/authentik/certs" "$DATA_ROOT/authentik/custom-templates"
+        ;;
+      papra)
+        mkdir -p "$DATA_ROOT/papra/app-data"
+        ;;
+      checkmate)
+        mkdir -p "$DATA_ROOT/checkmate/mongo-data" "$DATA_ROOT/checkmate/mongo-configdb"
+        ;;
       *)
         mkdir -p "$DATA_ROOT/$svc"
         ;;

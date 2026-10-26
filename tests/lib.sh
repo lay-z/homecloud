@@ -38,6 +38,10 @@ assert_file() {
   [[ -e "$1" ]] || fail "missing file: $1"
 }
 
+assert_dir() {
+  [[ -d "$1" ]] || fail "missing directory: $1"
+}
+
 assert_eq() {
   [[ "$1" == "$2" ]] || fail "expected '$2', got '$1'"
 }
