@@ -103,5 +103,5 @@ data. Back up `${DATA_ROOT}` separately; bind mounts do not protect against
   deployment. It is not required to use this stack.
 - `docs/install.md`, `docs/operations.md`, and `docs/adopt-existing-server.md`
   cover the details.
-- Never commit `.env`, `*/.env`, `*/.secrets`, `.namecheap.env`, or
-  `*/compose.override.yaml`.
+- Never commit `.env`, `*/.env`, `*/.secrets`, `.namecheap.env`,
+  `*/compose.override.yaml`, or `*/compose.staging.yaml`.

@@ -24,6 +24,9 @@ independent backups.
 
 ## Migrating existing named volumes
 
+Run only the stop and copy pair for the service being swapped. Do not stop all
+four volume owners at once; stopping Authentik early breaks Papra OIDC logins.
+
 Stop the owning container before copying. The tool refuses a non-empty
 destination. If a copy fails partway, remove only that failed partial copy;
 never delete a populated destination.
@@ -33,15 +36,19 @@ set -a
 . ./.env
 set +a
 
+# Authentik
 docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
 
+# Tandoor
 docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
 
+# Checkmate
 docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
 
+# Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
 ```

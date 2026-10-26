@@ -1712,6 +1712,9 @@ Immediately after the `## Data safety` section, insert:
 ````markdown
 ## Migrating existing named volumes
 
+Run only the stop and copy pair for the service being swapped. Do not stop all
+four volume owners at once; stopping Authentik early breaks Papra OIDC logins.
+
 Stop the owning container before copying. The tool refuses a non-empty
 destination. If a copy fails partway, remove only that failed partial copy;
 never delete a populated destination.
@@ -1721,15 +1724,19 @@ set -a
 . ./.env
 set +a
 
+# Authentik
 docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
 
+# Tandoor
 docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
 
+# Checkmate
 docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
 
+# Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
 ```
@@ -1761,8 +1768,12 @@ Replace the whole `## 1. Back up` section with:
 ## 1. Back up
 
 ```bash
-backup="$HOME/backups/stack-$(date +%F-%H%M)"
-mkdir -p "$backup"
+set -euo pipefail
+umask 077
+backup="$HOME/backups/stack-$(date +%F-%H%M%S)"
+mkdir "$backup"
+chmod 700 "$backup"
+
 for service in jellyfin immich tandoor authentik papra checkmate; do
   file="$HOME/$service/docker-compose.yml"
   [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
@@ -1770,17 +1781,35 @@ for service in jellyfin immich tandoor authentik papra checkmate; do
   cp "$file" "$backup/$service.compose.yml"
   cp "$HOME/$service/.env" "$backup/$service.env"
 done
+
 sudo tar -C /home/layz -czf "$backup/data-root.tgz" \
   jellyfin immich tandoor authentik papra checkmate traefik
+
+nginx_file="$HOME/nginx/examples/docker-compose.yml"
+[[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
+cp "$nginx_file" "$backup/nginx-compose.yml"
 cp -a "$HOME/nginx/examples/user_conf.d" "$backup/nginx-user_conf.d"
 sudo tar -C "$HOME/nginx/examples" -czf "$backup/letsencrypt.tgz" letsencrypt
+
+if [[ -f "$HOME/stack/.env" ]]; then
+  cp "$HOME/stack/.env" "$backup/stack.env"
+fi
+
 docker volume ls > "$backup/docker-volumes.txt"
+chmod -R go-rwx "$backup"
 ```
+
+The backup directory name includes seconds, and `mkdir` fails if the directory
+already exists. Any failure stops the block. `chmod -R go-rwx` protects database
+passwords, env files, resolved configs, and ACME keys.
 
 If the backup fails, stop and fix it before continuing.
 
-The old named volumes are retained and are the rollback copy for named-volume
-services; do not delete them until verification.
+`data-root.tgz` is a best-effort filesystem copy of bind data taken while
+services run. For a consistent database backup, stop the old services first or
+use `pg_dump`/`mongodump`/SQLite backup. The retained old named volumes and bind
+mounts are the migration rollback path; do not treat the live tar as a
+database-consistent backup.
 
 Never commit the backup directory.
 ````
@@ -1791,9 +1820,14 @@ Replace the whole `## 2. Prepare the instance` section with:
 ## 2. Prepare the instance
 
 ```bash
+set -euo pipefail
+if [[ -e "$HOME/stack" ]]; then
+  printf '%s already exists; move it aside or update it manually\n' "$HOME/stack" >&2
+  exit 1
+fi
 git clone <repo> "$HOME/stack"
 cd "$HOME/stack"
-cp .env.example .env
+cp -n .env.example .env
 ```
 
 Set at least:
@@ -1816,6 +1850,9 @@ Set `IMMICH_UPLOAD_LOCATION` to the old `UPLOAD_LOCATION`. `chmod 600` each
 `.secrets`. Do not let `./stack init` generate replacements for existing
 secrets. Do not commit either file.
 
+After populating them, back up the new repo `.env` and each service `.env` and
+`.secrets` into the section 1 backup directory, using `$backup` from that shell.
+
 Run `./stack init` and `./stack check` after the files are populated.
 ````
 
@@ -1828,7 +1865,9 @@ Do this only after section 9 is complete for every service. Stop nginx without
 removing data:
 
 ```bash
-docker compose -f "$HOME/nginx/examples/docker-compose.yml" down
+nginx_file="$HOME/nginx/examples/docker-compose.yml"
+[[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
+docker compose -f "$nginx_file" down
 ./stack up
 ```
 
@@ -1844,19 +1883,27 @@ Replace the whole `## 8. Rollback` section with:
 ```bash
 ./stack down
 
-docker compose -f "$HOME/nginx/examples/docker-compose.yml" up -d
-
 for service in jellyfin immich tandoor authentik papra checkmate; do
   file="$HOME/$service/docker-compose.yml"
   [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
   docker compose -f "$file" up -d
 done
+
+nginx_file="$HOME/nginx/examples/docker-compose.yml"
+[[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
+docker compose -f "$nginx_file" up -d
 ```
 
-Rollback starts the old stacks on the old volumes. Writes made to the new bind
-mounts after the swap are not copied back. If those writes are needed, copy the
-bind path back into the old volume before starting the old stack; otherwise
-accept the loss.
+Rollback starts the old stacks on the old volumes. Named-volume services
+(Authentik database, Checkmate Mongo, Tandoor static files, Immich model cache)
+lose post-swap writes on rollback because the old volumes do not contain them.
+Bind-mounted services share the same paths, so their post-swap writes remain.
+If writes to a named volume are needed, copy the bind path back into the old
+volume before starting the old stack; otherwise accept the loss.
+
+If Papra was swapped and the OIDC client secret was rotated, update the old
+Papra compose or env with the new secret (or rotate again) before starting the
+old Papra stack; otherwise OIDC login fails.
 
 Keep the old compose files and nginx certificates until the new stack has been
 stable for an agreed period.
@@ -1879,15 +1926,19 @@ copy fails partway, remove only that failed partial copy; never delete a
 populated destination.
 
 ```bash
+# Authentik
 docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database /home/layz/authentik/database
 
+# Tandoor
 docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles /home/layz/tandoor/staticfiles
 
+# Checkmate
 docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data /home/layz/checkmate/mongo-data
 
+# Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache /home/layz/immich/model-cache
 ```
@@ -2012,9 +2063,11 @@ service while nginx still owns 80/443, run a second Traefik on 8080/8443.
 Create `traefik/compose.staging.yaml` (gitignored) with:
 
 ```yaml
+name: traefik-staging
 services:
   traefik:
     container_name: traefik-staging
+    restart: "no"
     command:
       - --global.checkNewVersion=false
       - --global.sendAnonymousUsage=false
@@ -2056,19 +2109,23 @@ docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f tra
 curl -sk -H 'Host: flix.priyav.dev' https://127.0.0.1:8443/ -o /dev/null -w '%{http_code}\n'
 ```
 
-Expect 200, 302, 401, or 403; a 404 means the router is missing. Certificate
-issuance cannot succeed while nginx owns port 80; `-k` accepts Traefik's
-fallback certificate. Repeat with each migrated Host. Then stop the staging
-instance and remove the staging override and staging ACME file:
+Expect 200, 302, 401, or 403; a 404 can mean the router is missing or the app
+has no route at `/`; verify a known application path. Certificate issuance
+cannot succeed while nginx owns port 80; `-k` accepts Traefik's fallback
+certificate. Repeat with each migrated Host. Then stop the staging instance and
+remove the staging override and staging ACME file:
 
 ```bash
-docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml down
-
-set -a
-. ./.env
-set +a
-rm traefik/compose.staging.yaml "$DATA_ROOT/traefik/acme-staging.json"
+docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml down && {
+  set -a
+  . ./.env
+  set +a
+  rm traefik/compose.staging.yaml "$DATA_ROOT/traefik/acme-staging.json"
+}
 ```
+
+If an earlier attempt left `traefik/compose.override.yaml`, remove it before
+Phase 3; `stack` auto-includes it.
 
 Rollback for a single service: stop the new project
 (`docker compose --env-file .env --env-file <service>/.env --env-file <service>/.secrets -f <service>/compose.yaml down`)
@@ -2084,8 +2141,10 @@ Writes made to the new bind mounts after the swap are not copied back. If those
 writes are needed, copy the bind path back into the old volume before starting
 the old stack; otherwise accept the loss.
 
-Do not run `./stack down -v`. Do not stop nginx until the Phase 3 cutover in
-section 6.
+Do not run `./stack up` or `./stack down` during Phase 2; use the per-service
+commands, because both operate on the whole stack and can remove still-running
+old services. Do not run `./stack down -v`. Do not stop nginx until the Phase 3
+cutover in section 6.
 ````
 
 - [ ] **Step 6: Update `AGENTS.md`**
@@ -2222,7 +2281,8 @@ stop nginx.
 - Every test script prints its `passed` line.
 - All five services render with `BASE_DOMAIN=example.test`.
 - No rendered mount has `"type": "volume"`.
-- No tracked secrets or production domains.
+- No tracked secrets. Production domains appear only in the reference runbook,
+  not in rendered compose output or service env/test files.
 - `v0.2.0` exists.
 - Production nginx is still running; no ingress cutover has happened.
 
