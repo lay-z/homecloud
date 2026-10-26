@@ -1362,6 +1362,9 @@ rendered="$(render_service checkmate .env .secrets)"
 rendered_json="$(render_service_json checkmate .env .secrets)"
 
 assert_render_contains "$rendered" 'name: checkmate' 'project name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-checkmate-1' 'checkmate container name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-mongodb-1' 'mongodb container name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-capture-1' 'capture container name missing'
 assert_render_contains "$rendered" "Host(\`status.example.test\`)" 'status host rule missing'
 assert_render_contains "$rendered" "Host(\`info.status.example.test\`)" 'info status host rule missing'
 assert_render_contains "$rendered" 'http://127.0.0.1:52345' 'upstream missing'
@@ -1428,7 +1431,7 @@ name: checkmate
 
 services:
   checkmate:
-    container_name: checkmate
+    container_name: checkmate-checkmate-1
     image: ghcr.io/bluewave-labs/checkmate:latest@sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de
     restart: unless-stopped
     stop_grace_period: 60s

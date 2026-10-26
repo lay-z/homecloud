@@ -2,7 +2,7 @@ name: checkmate
 
 services:
   checkmate:
-    container_name: checkmate
+    container_name: checkmate-checkmate-1
     image: ghcr.io/bluewave-labs/checkmate:latest@sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de
     restart: unless-stopped
     stop_grace_period: 60s

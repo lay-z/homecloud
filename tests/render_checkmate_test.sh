@@ -11,6 +11,9 @@ rendered="$(render_service checkmate .env .secrets)"
 rendered_json="$(render_service_json checkmate .env .secrets)"
 
 assert_render_contains "$rendered" 'name: checkmate' 'project name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-checkmate-1' 'checkmate container name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-mongodb-1' 'mongodb container name missing'
+assert_render_contains "$rendered" 'container_name: checkmate-capture-1' 'capture container name missing'
 assert_render_contains "$rendered" "Host(\`status.example.test\`)" 'status host rule missing'
 assert_render_contains "$rendered" "Host(\`info.status.example.test\`)" 'info status host rule missing'
 assert_render_contains "$rendered" 'http://127.0.0.1:52345' 'upstream missing'
