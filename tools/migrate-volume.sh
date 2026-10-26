@@ -18,7 +18,11 @@ dest="$2"
 }
 
 "$DOCKER_BIN" volume inspect "$volume" >/dev/null
-if [[ -n "$("$DOCKER_BIN" ps -q --filter "volume=$volume")" ]]; then
+if ! in_use="$("$DOCKER_BIN" ps -q --filter "volume=$volume")"; then
+  printf 'cannot check whether volume is in use: %s\n' "$volume" >&2
+  exit 1
+fi
+if [[ -n "$in_use" ]]; then
   printf 'volume is in use by a running container: %s\n' "$volume" >&2
   exit 1
 fi

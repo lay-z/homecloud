@@ -46,4 +46,28 @@ if DOCKER_BUSY_VOLUME=busy_volume "$ROOT/tools/migrate-volume.sh" busy_volume "$
 fi
 [[ ! -e "$TMP/busy-data" ]] || fail "created the destination before checking volume use"
 
+lsbin="$TMP/ls-bin"
+mkdir -p "$lsbin"
+cat > "$lsbin/ls" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$lsbin/ls"
+: > "$DOCKER_LOG"
+if PATH="$lsbin:$PATH" "$ROOT/tools/migrate-volume.sh" source_volume "$TMP/ls-fail-data" >/dev/null 2>&1; then
+  fail "copied when the destination could not be inspected"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy after the destination check failed"
+fi
+
+: > "$DOCKER_LOG"
+if DOCKER_PS_FAIL=1 "$ROOT/tools/migrate-volume.sh" source_volume "$TMP/ps-fail-data" >/dev/null 2>&1; then
+  fail "copied when volume use could not be checked"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy after the volume-use check failed"
+fi
+[[ ! -e "$TMP/ps-fail-data" ]] || fail "created the destination before the volume-use check"
+
 printf 'migrate volume tests passed\n'

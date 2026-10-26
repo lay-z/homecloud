@@ -135,6 +135,9 @@ Responsibilities:
 Extend the fake docker in `tests/lib.sh`. In the heredoc that writes `$TMP/bin/docker`, add these cases after the existing `DOCKER_VOLUME_JSON` block and before `exit 0`:
 
 ```bash
+if [[ "${DOCKER_PS_FAIL:-0}" == "1" && "$*" == *"ps -q"* ]]; then
+  exit 1
+fi
 if [[ -n "${DOCKER_MISSING_VOLUME:-}" && "$*" == "volume inspect $DOCKER_MISSING_VOLUME" ]]; then
   exit 1
 fi
@@ -195,6 +198,30 @@ if DOCKER_BUSY_VOLUME=busy_volume "$ROOT/tools/migrate-volume.sh" busy_volume "$
 fi
 [[ ! -e "$TMP/busy-data" ]] || fail "created the destination before checking volume use"
 
+lsbin="$TMP/ls-bin"
+mkdir -p "$lsbin"
+cat > "$lsbin/ls" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$lsbin/ls"
+: > "$DOCKER_LOG"
+if PATH="$lsbin:$PATH" "$ROOT/tools/migrate-volume.sh" source_volume "$TMP/ls-fail-data" >/dev/null 2>&1; then
+  fail "copied when the destination could not be inspected"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy after the destination check failed"
+fi
+
+: > "$DOCKER_LOG"
+if DOCKER_PS_FAIL=1 "$ROOT/tools/migrate-volume.sh" source_volume "$TMP/ps-fail-data" >/dev/null 2>&1; then
+  fail "copied when volume use could not be checked"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy after the volume-use check failed"
+fi
+[[ ! -e "$TMP/ps-fail-data" ]] || fail "created the destination before the volume-use check"
+
 printf 'migrate volume tests passed\n'
 ```
 
@@ -232,7 +259,11 @@ dest="$2"
 }
 
 "$DOCKER_BIN" volume inspect "$volume" >/dev/null
-if [[ -n "$("$DOCKER_BIN" ps -q --filter "volume=$volume")" ]]; then
+if ! in_use="$("$DOCKER_BIN" ps -q --filter "volume=$volume")"; then
+  printf 'cannot check whether volume is in use: %s\n' "$volume" >&2
+  exit 1
+fi
+if [[ -n "$in_use" ]]; then
   printf 'volume is in use by a running container: %s\n' "$volume" >&2
   exit 1
 fi
