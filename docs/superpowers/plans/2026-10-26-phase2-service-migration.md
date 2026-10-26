@@ -1796,7 +1796,7 @@ if [[ -f "$HOME/stack/.env" ]]; then
 fi
 
 docker volume ls > "$backup/docker-volumes.txt"
-chmod -R go-rwx "$backup"
+sudo chmod -R go-rwx "$backup"
 ```
 
 The backup directory name includes seconds, and `mkdir` fails if the directory
