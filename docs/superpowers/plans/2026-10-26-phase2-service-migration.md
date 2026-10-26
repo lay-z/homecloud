@@ -1779,6 +1779,9 @@ bind mounts and need no copy. Set `IMMICH_UPLOAD_LOCATION` to the old
 `UPLOAD_LOCATION` value (`/mnt/seagate/Media/Photos` on the reference server),
 and move the old `DB_PASSWORD` into `immich/.secrets`, not `immich/.env`.
 
+Put existing secrets in each service's `.secrets`, not `.env`; `--env-file`
+order makes `.secrets` win, and `stack check` validates it.
+
 For Papra, set `PAPRA_OIDC_CLIENT_ID` to the existing client ID, put
 `AUTH_SECRET` in `papra/.secrets`, and rotate the OIDC client secret in
 Authentik. Put the new URL-safe secret in `papra/.secrets`.
@@ -1787,6 +1790,14 @@ For Checkmate, preserve `ENCRYPTION_KEY` and `CAPTURE_API_SECRET`. Generate a
 new `JWT_SECRET` with `openssl rand -hex 32` and put them in
 `checkmate/.secrets`; do not reuse the exposed JWT secret. The capture service
 maps `CAPTURE_API_SECRET` to `API_SECRET`.
+
+For Tandoor, move the existing `SECRET_KEY`, `POSTGRES_PASSWORD`, and
+`EMAIL_HOST_PASSWORD` into `tandoor/.secrets`. The Postgres container must use
+the same `POSTGRES_PASSWORD` as the existing database.
+
+For Authentik, move the existing `PG_PASS` and `AUTHENTIK_SECRET_KEY` into
+`authentik/.secrets`. The Postgres container must use the same `PG_PASS` as the
+existing database.
 
 Do not remove the old volumes until the new stack has been verified.
 ````
@@ -1799,18 +1810,28 @@ At the end of `docs/adopt-existing-server.md`, append:
 ## 9. Soft-swap one service at a time
 
 This step keeps nginx on 80/443 and swaps the container behind nginx. It is the
-safe way to validate each converted stack before Phase 3.
+safe way to validate each converted stack before Phase 3. Run the commands from
+the repo root (`$HOME/stack`).
 
 For every service:
 
 1. Migrate its volumes with the commands in section 4.
 2. Stop the old project without removing data:
-   `docker compose -f "$HOME/<service>/docker-compose.yml" down`
+
+   ```bash
+   file="$HOME/<service>/docker-compose.yml"
+   [[ -f "$file" ]] || file="$HOME/<service>/docker-compose.yaml"
+   docker compose -f "$file" down
+   ```
+
 3. Start only the converted service from this repo. Add
    `-f <service>/compose.override.yaml` when that file exists. Do not run
    `./stack up`; that starts Traefik on ports 80 and 443 and would conflict
    with nginx.
 4. Verify the public URL still works through nginx.
+
+Checkmate's old file is `docker-compose.yaml`; the others are
+`docker-compose.yml`.
 
 Example for Jellyfin:
 
@@ -1821,11 +1842,22 @@ docker compose --env-file .env --env-file jellyfin/.env --env-file jellyfin/.sec
 curl -sI https://flix.priyav.dev/ | head
 ```
 
+Example for Immich:
+
+```bash
+docker compose -f "$HOME/immich/docker-compose.yml" down
+docker compose --env-file .env --env-file immich/.env --env-file immich/.secrets -f immich/compose.yaml up -d
+curl -sI https://photos.priyav.dev/ | head
+```
+
+Tandoor, Authentik, and Papra follow the same pattern with `docker-compose.yml`
+and no host override in this phase.
+
 Example for Checkmate:
 
 ```bash
 cp checkmate/compose.override.yaml.example checkmate/compose.override.yaml
-docker compose -f "$HOME/checkmate/docker-compose.yml" down
+docker compose -f "$HOME/checkmate/docker-compose.yaml" down
 docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.secrets -f checkmate/compose.yaml -f checkmate/compose.override.yaml up -d
 curl -sI https://status.priyav.dev/ | head
 ```
@@ -1899,8 +1931,13 @@ rm traefik/compose.override.yaml
 
 Rollback for a single service: stop the new project
 (`docker compose --env-file .env --env-file <service>/.env --env-file <service>/.secrets -f <service>/compose.yaml down`)
-and start the old one
-(`docker compose -f "$HOME/<service>/docker-compose.yml" up -d`).
+and start the old one:
+
+```bash
+file="$HOME/<service>/docker-compose.yml"
+[[ -f "$file" ]] || file="$HOME/<service>/docker-compose.yaml"
+docker compose -f "$file" up -d
+```
 
 Do not run `./stack down -v`. Do not stop nginx in this phase.
 ````
@@ -1986,14 +2023,17 @@ stop nginx.
 - [ ] Create the server `.env` files from the new templates and copy existing
       values into `.env` / `.secrets` before running `./stack init`. Do not let
       `init` generate replacements for existing secrets.
-- [ ] Preserve `AUTHENTIK_SECRET_KEY`, `PG_PASS`, `AUTH_SECRET`, and Checkmate's
-      `ENCRYPTION_KEY` and `CAPTURE_API_SECRET` so sessions, the database, OIDC,
-      and capture keep working. Generate a new Checkmate `JWT_SECRET` with
-      `openssl rand -hex 32`; do not reuse the exposed JWT secret. If any other
-      existing value is empty, generate one with `openssl rand -hex 32`;
-      otherwise `stack check` rejects the empty secret.
-- [ ] Rotate the Papra OIDC client secret in Authentik and put the new
-      URL-safe value in `papra/.secrets`; do not reuse the exposed secret.
+- [ ] Put existing secrets in each service's `.secrets`, not `.env`: Immich
+      `DB_PASSWORD`; Tandoor `SECRET_KEY`, `POSTGRES_PASSWORD`,
+      `EMAIL_HOST_PASSWORD`; Authentik `PG_PASS`, `AUTHENTIK_SECRET_KEY`;
+      Papra `AUTH_SECRET`; Checkmate `ENCRYPTION_KEY`, `CAPTURE_API_SECRET`.
+      Do not let `stack init` replace them.
+- [ ] Generate a new Checkmate `JWT_SECRET` with `openssl rand -hex 32`; do not
+      reuse the exposed JWT secret.
+- [ ] Rotate the Papra OIDC client secret in Authentik and put the new URL-safe
+      value in `papra/.secrets`; do not reuse the exposed secret.
+- [ ] If any other existing secret is empty, generate one with
+      `openssl rand -hex 32`; otherwise `stack check` rejects the empty secret.
 - [ ] Set `DATA_ROOT=/home/layz`, `BASE_DOMAIN=priyav.dev`, and
       `ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate`.
 - [ ] Run `./stack init` and `./stack check` on the server.

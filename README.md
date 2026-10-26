@@ -65,16 +65,17 @@ Persistent data lives under `${DATA_ROOT}/<service>`, never inside the repo.
 
 ## Services
 
-| Service | Domain | Upstream |
-| --- | --- | --- |
-| Jellyfin | `flix.<base>` | `127.0.0.1:8096` |
-| Immich | `photos.<base>` | `127.0.0.1:2283` |
-| Tandoor | `recipes.<base>` | `127.0.0.1:8979` |
-| Authentik | `id.<base>` | `127.0.0.1:9000` |
-| Papra | `docs.<base>` | `127.0.0.1:1221` |
-| Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` |
+| Service | Domain | Upstream | Status |
+| --- | --- | --- | --- |
+| Jellyfin | `flix.<base>` | `127.0.0.1:8096` | converted |
+| Immich | `photos.<base>` | `127.0.0.1:2283` | converted |
+| Tandoor | `recipes.<base>` | `127.0.0.1:8979` | converted |
+| Authentik | `id.<base>` | `127.0.0.1:9000` | converted |
+| Papra | `docs.<base>` | `127.0.0.1:1221` | converted |
+| Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` | converted |
 
-Only Jellyfin is converted in this phase. The others are follow-on work.
+All public services are converted to per-service directories. nginx still owns
+ports 80 and 443 until Phase 3 cuts ingress over to Traefik.
 
 ## Updates
 

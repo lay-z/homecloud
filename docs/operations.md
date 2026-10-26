@@ -22,6 +22,37 @@ anonymous data volumes. `docker compose down -v`, `docker volume prune`, and
 Bind mounts do not protect against `rm -rf ${DATA_ROOT}` or disk failure. Keep
 independent backups.
 
+## Migrating existing named volumes
+
+Stop the owning container before copying. The tool refuses a non-empty
+destination, so remove a partially-created target first.
+
+```bash
+set -a
+. ./.env
+set +a
+
+docker stop authentik-postgresql-1
+./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
+
+docker stop tandoor-web_recipes-1
+./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
+
+docker stop checkmate-mongodb-1
+./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
+
+docker stop immich_machine_learning
+./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
+```
+
+Immich's Redis data is a pure cache. Start it with an empty
+`${DATA_ROOT}/immich/redis` instead of copying the anonymous volume.
+Checkmate's `/data/configdb` volume is empty; create
+`${DATA_ROOT}/checkmate/mongo-configdb` and leave it empty.
+
+Do not delete the old volumes until the new containers have been running and
+verified for an agreed period.
+
 ## Updates
 
 ```bash

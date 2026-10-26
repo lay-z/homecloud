@@ -31,9 +31,10 @@ persistent paths are bind mounts; do not introduce named or anonymous volumes.
 
 ## Current phase
 
-Jellyfin is the first converted service. Other services and the nginx cutover
-are follow-on work. Do not stop nginx until every public host has a Traefik
-route.
+Phase 2 converted Immich, Tandoor, Authentik, Papra, and Checkmate. Every public
+service now has a Traefik route and bind-mounted data. nginx still owns ports 80
+and 443; Phase 3 performs the ingress cutover and adds the update timer. Do not
+stop nginx until the cutover is explicitly scheduled.
 
 ## Server notes
 
