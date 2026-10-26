@@ -82,17 +82,42 @@ assert_mount() {
   local source="$2"
   local target="$3"
   local message="$4"
+  local service="${5:-}"
 
   if ! python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 source, target = sys.argv[1], sys.argv[2]
-for service in data.get("services", {}).values():
-    for volume in service.get("volumes", []):
+service = sys.argv[3]
+services = data.get("services", {}).values()
+if service:
+    services = [data.get("services", {}).get(service, {})]
+for service_data in services:
+    for volume in service_data.get("volumes", []):
         if volume.get("source") == source and volume.get("target") == target:
             raise SystemExit(0)
 raise SystemExit(1)
-' "$source" "$target" <<< "$rendered"; then
+' "$source" "$target" "$service" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
+
+assert_no_service_mount() {
+  local rendered="$1"
+  local service="$2"
+  local source="$3"
+  local target="$4"
+  local message="$5"
+
+  if python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+service, source, target = sys.argv[1], sys.argv[2], sys.argv[3]
+for volume in data.get("services", {}).get(service, {}).get("volumes", []):
+    if volume.get("source") == source and volume.get("target") == target:
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$service" "$source" "$target" <<< "$rendered"; then
     fail "$message"
   fi
 }
