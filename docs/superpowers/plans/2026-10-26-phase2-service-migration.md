@@ -177,15 +177,23 @@ assert_contains "$DOCKER_LOG" "-v $dest:/to"
 assert_contains "$DOCKER_LOG" "alpine:3.20 sh -c cp -a /from/. /to/"
 
 printf 'keep\n' > "$dest/keep"
+: > "$DOCKER_LOG"
 if "$ROOT/tools/migrate-volume.sh" source_volume "$dest" >/dev/null 2>&1; then
   fail "copied into a non-empty destination"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy into a non-empty destination"
 fi
 
 hidden="$TMP/volume-data-hidden"
 mkdir -p "$hidden"
 printf 'keep\n' > "$hidden/.hidden"
+: > "$DOCKER_LOG"
 if "$ROOT/tools/migrate-volume.sh" source_volume "$hidden" >/dev/null 2>&1; then
   fail "copied into a destination with only hidden files"
+fi
+if grep -Fq -- "run --rm" "$DOCKER_LOG"; then
+  fail "ran the copy into a destination with only hidden files"
 fi
 
 if DOCKER_MISSING_VOLUME=missing_volume "$ROOT/tools/migrate-volume.sh" missing_volume "$TMP/missing-data" >/dev/null 2>&1; then
