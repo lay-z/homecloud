@@ -10,10 +10,15 @@ Phase 3. Complete section 9 for every service before section 6.
 ```bash
 set -euo pipefail
 umask 077
-backup="$HOME/backups/stack-$(date +%F-%H%M%S)"
 mkdir -p "$HOME/backups"
+backup="$HOME/backups/stack-$(date +%F-%H%M%S)"
 mkdir "$backup"
 chmod 700 "$backup"
+
+docker exec authentik-postgresql-1 pg_dump -U authentik authentik > "$backup/authentik.sql"
+docker exec tandoor-db_recipes-1 pg_dump -U djangouser djangodb > "$backup/tandoor.sql"
+docker exec immich_postgres pg_dump -U postgres immich > "$backup/immich.sql"
+docker exec checkmate-mongodb-1 mongodump --archive --gzip > "$backup/checkmate-mongo.archive.gz"
 
 for service in jellyfin immich tandoor authentik papra checkmate; do
   file="$HOME/$service/docker-compose.yml"
@@ -23,13 +28,19 @@ for service in jellyfin immich tandoor authentik papra checkmate; do
   cp "$HOME/$service/.env" "$backup/$service.env"
 done
 
-sudo tar -C /home/layz -czf "$backup/data-root.tgz" \
-  jellyfin immich tandoor authentik papra checkmate traefik
+for service in jellyfin immich tandoor authentik papra checkmate; do
+  file="$HOME/$service/docker-compose.yml"
+  [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
+  docker compose -f "$file" down
+done
 
-docker exec authentik-postgresql-1 pg_dump -U authentik authentik > "$backup/authentik.sql"
-docker exec tandoor-db_recipes-1 pg_dump -U djangouser djangodb > "$backup/tandoor.sql"
-docker exec immich_postgres pg_dump -U postgres immich > "$backup/immich.sql"
-docker exec checkmate-mongodb-1 mongodump --archive --gzip > "$backup/checkmate-mongo.archive.gz"
+tar_paths=()
+for path in jellyfin immich tandoor authentik papra checkmate traefik; do
+  [[ -e "/home/layz/$path" ]] && tar_paths+=("$path")
+done
+if (( ${#tar_paths[@]} )); then
+  sudo tar -C /home/layz -czf "$backup/data-root.tgz" "${tar_paths[@]}"
+fi
 
 nginx_file="$HOME/nginx/examples/docker-compose.yml"
 [[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
@@ -40,23 +51,28 @@ sudo tar -C "$HOME/nginx/examples" -czf "$backup/letsencrypt.tgz" letsencrypt
 if [[ -f "$HOME/stack/.env" ]]; then
   cp "$HOME/stack/.env" "$backup/stack.env"
 fi
-
 docker volume ls > "$backup/docker-volumes.txt"
 sudo chmod -R go-rwx "$backup"
+
+for service in jellyfin immich tandoor authentik papra checkmate; do
+  file="$HOME/$service/docker-compose.yml"
+  [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
+  docker compose -f "$file" up -d
+done
 ```
 
 The backup directory name includes seconds, and `mkdir` fails if the directory
 already exists. Any failure stops the block. `chmod -R go-rwx` protects database
 passwords, env files, resolved configs, and ACME keys.
 
-If the backup fails, stop and fix it before continuing.
-
 The SQL dumps and Mongo archive are the consistent database backups.
-`data-root.tgz` is a best-effort filesystem copy of bind data taken while
-services run. For a fully consistent database backup, stop the old services
-first or rely on the dumps above. The retained old named volumes and bind
-mounts are the migration rollback path; do not treat the live tar as a
-database-consistent backup.
+`data-root.tgz` is a quiesced filesystem copy taken while the old services are
+stopped. Media under `/mnt/seagate` is not included; it is not migrated. The
+retained old named volumes and bind mounts are the migration rollback path; do
+not treat the tar as a database-consistent backup.
+
+If the block fails after stopping the services, restart them with section 8's
+commands before continuing.
 
 Never commit the backup directory.
 
@@ -124,27 +140,43 @@ set -a
 . ./.env
 set +a
 : "${DATA_ROOT:?run from the repo root with .env loaded}"
-```
 
-```bash
 # Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Tandoor
 docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Checkmate
 docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Authentik
 docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
@@ -209,9 +241,10 @@ Do this only after section 9 is complete for every service. Run `./stack check`
 before stopping nginx:
 
 ```bash
-./stack check
+set -euo pipefail
 nginx_file="$HOME/nginx/examples/docker-compose.yml"
 [[ -f "$nginx_file" ]] || nginx_file="$HOME/nginx/examples/docker-compose.yaml"
+./stack check
 docker compose -f "$nginx_file" down
 ./stack up
 ```
@@ -297,6 +330,7 @@ Checkmate's old file is `docker-compose.yaml`; the others are
 Example for Jellyfin:
 
 ```bash
+set -euo pipefail
 cp -n jellyfin/compose.override.yaml.example jellyfin/compose.override.yaml
 docker compose -f "$HOME/jellyfin/docker-compose.yml" down
 docker compose --env-file .env --env-file jellyfin/.env --env-file jellyfin/.secrets -f jellyfin/compose.yaml -f jellyfin/compose.override.yaml up -d
@@ -306,6 +340,7 @@ curl -sI https://flix.priyav.dev/ | head
 Example for Immich:
 
 ```bash
+set -euo pipefail
 docker compose -f "$HOME/immich/docker-compose.yml" down
 docker compose --env-file .env --env-file immich/.env --env-file immich/.secrets -f immich/compose.yaml up -d
 curl -sI https://photos.priyav.dev/ | head
@@ -317,6 +352,7 @@ and no host override in this phase.
 Example for Checkmate:
 
 ```bash
+set -euo pipefail
 cp -n checkmate/compose.override.yaml.example checkmate/compose.override.yaml
 docker compose -f "$HOME/checkmate/docker-compose.yaml" down
 docker compose --env-file .env --env-file checkmate/.env --env-file checkmate/.secrets -f checkmate/compose.yaml -f checkmate/compose.override.yaml up -d

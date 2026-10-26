@@ -38,27 +38,43 @@ set -a
 . ./.env
 set +a
 : "${DATA_ROOT:?run from the repo root with .env loaded}"
-```
 
-```bash
 # Immich
 docker stop --time 60 immich_machine_learning
 ./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Tandoor
 docker stop --time 60 tandoor-web_recipes-1
 ./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Checkmate
 docker stop --time 60 checkmate-mongodb-1
 ./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
 ```
 
 ```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
 # Authentik
 docker stop --time 60 authentik-postgresql-1
 ./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
