@@ -1,0 +1,4 @@
+services:
+  checkmate:
+    group_add:
+      - "957"

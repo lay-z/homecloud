@@ -1,0 +1,65 @@
+name: checkmate
+
+services:
+  checkmate:
+    container_name: checkmate
+    image: ghcr.io/bluewave-labs/checkmate:latest@sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de
+    restart: unless-stopped
+    stop_grace_period: 60s
+    env_file:
+      - .env
+      - .secrets
+    environment:
+      DB_CONNECTION_STRING: mongodb://mongodb:27017/uptime_db
+      CLIENT_HOST: https://status.${BASE_DOMAIN}
+      CLIENT_CONFIG_CLIENT_HOST: https://status.${BASE_DOMAIN}
+    ports:
+      - "127.0.0.1:52345:52345"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:52346/livez',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.checkmate.rule=Host(`status.${BASE_DOMAIN}`) || Host(`info.status.${BASE_DOMAIN}`)"
+      - traefik.http.routers.checkmate.entrypoints=websecure
+      - traefik.http.routers.checkmate.tls.certresolver=le
+      - traefik.http.services.checkmate.loadbalancer.server.url=http://127.0.0.1:52345
+
+  mongodb:
+    container_name: checkmate-mongodb-1
+    image: mongo:8.0@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+    restart: unless-stopped
+    command: ["mongod", "--quiet", "--bind_ip_all"]
+    volumes:
+      - ${DATA_ROOT}/checkmate/mongo-data:/data/db
+      - ${DATA_ROOT}/checkmate/mongo-configdb:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+
+  capture:
+    container_name: checkmate-capture-1
+    image: ghcr.io/bluewave-labs/capture:latest@sha256:c4917c572b12d4068b5987494132da728363591ec9227a116ef07cd77222292f
+    restart: unless-stopped
+    env_file:
+      - .secrets
+    environment:
+      GIN_MODE: release
+      API_SECRET: ${CAPTURE_API_SECRET}
+    volumes:
+      - /etc/os-release:/etc/os-release:ro
+      - /mnt/old-home:/mnt/old-home:ro
+      - /mnt/seagate:/mnt/seagate:ro

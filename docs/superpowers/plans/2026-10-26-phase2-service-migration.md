@@ -563,6 +563,26 @@ raise SystemExit(1)
   fi
 }
 
+assert_mount_read_only() {
+  local rendered="$1"
+  local service="$2"
+  local source="$3"
+  local target="$4"
+  local message="$5"
+
+  if ! python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+service, source, target = sys.argv[1], sys.argv[2], sys.argv[3]
+for volume in data.get("services", {}).get(service, {}).get("volumes", []):
+    if volume.get("source") == source and volume.get("target") == target and volume.get("read_only") is True:
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$service" "$source" "$target" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
+
 assert_service_env() {
   local rendered="$1"
   local service="$2"
@@ -1339,6 +1359,7 @@ copy_service checkmate
 install_fixture checkmate
 
 rendered="$(render_service checkmate .env .secrets)"
+rendered_json="$(render_service_json checkmate .env .secrets)"
 
 assert_render_contains "$rendered" 'name: checkmate' 'project name missing'
 assert_render_contains "$rendered" "Host(\`status.example.test\`)" 'status host rule missing'
@@ -1348,8 +1369,24 @@ assert_render_contains "$rendered" 'host_ip: 127.0.0.1' 'port is not loopback-bo
 assert_render_contains "$rendered" "$TMP/data/checkmate/mongo-data" 'mongo data bind missing'
 assert_render_contains "$rendered" "$TMP/data/checkmate/mongo-configdb" 'mongo configdb bind missing'
 assert_render_contains "$rendered" 'source: /var/run/docker.sock' 'docker socket bind missing'
-assert_render_contains "$rendered" 'read_only: true' 'docker socket is not read-only'
-assert_no_volumes "$(render_service_json checkmate .env .secrets)"
+assert_no_volumes "$rendered_json"
+assert_mount "$rendered_json" "$TMP/data/checkmate/mongo-data" /data/db 'mongo data bind missing or wrong target' mongodb
+assert_mount "$rendered_json" "$TMP/data/checkmate/mongo-configdb" /data/configdb 'mongo configdb bind missing or wrong target' mongodb
+assert_mount "$rendered_json" /var/run/docker.sock /var/run/docker.sock 'checkmate docker socket bind missing' checkmate
+assert_mount_read_only "$rendered_json" checkmate /var/run/docker.sock /var/run/docker.sock 'docker socket is not read-only'
+assert_no_service_mount "$rendered_json" mongodb /var/run/docker.sock /var/run/docker.sock 'mongodb must not mount the docker socket'
+assert_no_service_mount "$rendered_json" capture /var/run/docker.sock /var/run/docker.sock 'capture must not mount the docker socket'
+assert_mount "$rendered_json" /etc/os-release /etc/os-release 'capture os-release bind missing' capture
+assert_mount "$rendered_json" /mnt/old-home /mnt/old-home 'capture old-home bind missing' capture
+assert_mount "$rendered_json" /mnt/seagate /mnt/seagate 'capture seagate bind missing' capture
+assert_service_env "$rendered_json" checkmate DB_CONNECTION_STRING mongodb://mongodb:27017/uptime_db 'database connection string missing'
+assert_service_env "$rendered_json" checkmate CLIENT_HOST https://status.example.test 'client host missing'
+assert_service_env "$rendered_json" checkmate CLIENT_CONFIG_CLIENT_HOST https://status.example.test 'client config host missing'
+assert_service_env "$rendered_json" checkmate JWT_SECRET test-jwt 'checkmate JWT secret missing'
+assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY test-encryption 'checkmate encryption key missing'
+assert_service_env "$rendered_json" checkmate CAPTURE_API_SECRET test-capture 'checkmate capture secret missing'
+assert_service_env "$rendered_json" capture API_SECRET test-capture 'capture API secret missing'
+assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missing'
 
 printf 'checkmate render tests passed\n'
 ```
@@ -1375,6 +1412,8 @@ Create `checkmate/.env.example` with exactly:
 Create `checkmate/.secrets.example` with exactly:
 
 ```dotenv
+# Existing servers: preserve ENCRYPTION_KEY. Generate new JWT_SECRET and
+# CAPTURE_API_SECRET; do not reuse the exposed JWT secret.
 JWT_SECRET=
 ENCRYPTION_KEY=
 CAPTURE_API_SECRET=
@@ -1445,6 +1484,7 @@ services:
       - .secrets
     environment:
       GIN_MODE: release
+      API_SECRET: ${CAPTURE_API_SECRET}
     volumes:
       - /etc/os-release:/etc/os-release:ro
       - /mnt/old-home:/mnt/old-home:ro
@@ -1476,7 +1516,7 @@ Expected: `checkmate render tests passed`.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add checkmate tests/fixtures/checkmate.env tests/fixtures/checkmate.secrets tests/render_checkmate_test.sh
+git add checkmate tests/fixtures/checkmate.env tests/fixtures/checkmate.secrets tests/render_checkmate_test.sh tests/render_lib.sh
 git commit -m "feat: add Checkmate stack"
 ```
 
@@ -1708,6 +1748,12 @@ For Papra, set `PAPRA_OIDC_CLIENT_ID` to the existing client ID, put
 `AUTH_SECRET` in `papra/.secrets`, and rotate the OIDC client secret in
 Authentik. Put the new URL-safe secret in `papra/.secrets`.
 
+For Checkmate, preserve `ENCRYPTION_KEY` so existing encrypted values remain
+readable. Generate new `JWT_SECRET` and `CAPTURE_API_SECRET` with
+`openssl rand -hex 32` and put them in `checkmate/.secrets`; do not reuse the
+exposed JWT secret. The capture service maps `CAPTURE_API_SECRET` to
+`API_SECRET`.
+
 Do not remove the old volumes until the new stack has been verified.
 ````
 
@@ -1738,6 +1784,10 @@ docker compose -f "$HOME/jellyfin/docker-compose.yml" down
 docker compose --env-file .env --env-file jellyfin/.env --env-file jellyfin/.secrets -f jellyfin/compose.yaml up -d
 curl -sI https://flix.priyav.dev/ | head
 ```
+
+Checkmate requires copying `checkmate/compose.override.yaml.example` to
+`checkmate/compose.override.yaml` before starting it so the container can access
+the Docker socket group.
 
 Recommended order, lowest risk first:
 
@@ -1892,10 +1942,12 @@ stop nginx.
 - [ ] Create the server `.env` files from the new templates and copy existing
       values into `.env` / `.secrets` before running `./stack init`. Do not let
       `init` generate replacements for existing secrets.
-- [ ] Preserve `JWT_SECRET`, `AUTHENTIK_SECRET_KEY`, `PG_PASS`, and
-      `AUTH_SECRET` so sessions and OIDC keep working. If an existing value is
-      empty (for example Checkmate's `ENCRYPTION_KEY`), generate one with
-      `openssl rand -hex 32`; otherwise `stack check` rejects the empty secret.
+- [ ] Preserve `AUTHENTIK_SECRET_KEY`, `PG_PASS`, `AUTH_SECRET`, and Checkmate's
+      `ENCRYPTION_KEY` so sessions, the database, and OIDC keep working.
+      Generate new Checkmate `JWT_SECRET` and `CAPTURE_API_SECRET` with
+      `openssl rand -hex 32`; do not reuse the exposed JWT secret. If any other
+      existing value is empty, generate one with `openssl rand -hex 32`;
+      otherwise `stack check` rejects the empty secret.
 - [ ] Rotate the Papra OIDC client secret in Authentik and put the new
       URL-safe value in `papra/.secrets`; do not reuse the exposed secret.
 - [ ] Set `DATA_ROOT=/home/layz`, `BASE_DOMAIN=priyav.dev`, and

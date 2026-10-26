@@ -122,6 +122,26 @@ raise SystemExit(1)
   fi
 }
 
+assert_mount_read_only() {
+  local rendered="$1"
+  local service="$2"
+  local source="$3"
+  local target="$4"
+  local message="$5"
+
+  if ! python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+service, source, target = sys.argv[1], sys.argv[2], sys.argv[3]
+for volume in data.get("services", {}).get(service, {}).get("volumes", []):
+    if volume.get("source") == source and volume.get("target") == target and volume.get("read_only") is True:
+        raise SystemExit(0)
+raise SystemExit(1)
+' "$service" "$source" "$target" <<< "$rendered"; then
+    fail "$message"
+  fi
+}
+
 assert_service_env() {
   local rendered="$1"
   local service="$2"
