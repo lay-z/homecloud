@@ -1,0 +1,27 @@
+name: papra
+
+services:
+  papra:
+    container_name: papra
+    image: ghcr.io/papra-hq/papra:latest@sha256:9b3ddb66c63caf9d2616a2cb47689d39af4efd4ed19bffdf1943a8a262719c35
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    env_file:
+      - .env
+      - .secrets
+    environment:
+      TZ: ${TZ}
+      APP_BASE_URL: https://docs.${BASE_DOMAIN}
+      AUTH_PROVIDERS_EMAIL_IS_ENABLED: "false"
+      AUTH_PROVIDERS_CUSTOMS: >-
+        [{"providerId":"authentik","providerName":"authentik","providerIconUrl":"https://id.${BASE_DOMAIN}/static/dist/assets/icons/icon.png","clientId":"${PAPRA_OIDC_CLIENT_ID}","clientSecret":"${PAPRA_OIDC_CLIENT_SECRET}","type":"oidc","discoveryUrl":"https://id.${BASE_DOMAIN}/application/o/papra/.well-known/openid-configuration","scopes":["openid","profile","email"]}]
+    ports:
+      - "127.0.0.1:1221:1221"
+    volumes:
+      - ${DATA_ROOT}/papra/app-data:/app/app-data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.papra.rule=Host(`docs.${BASE_DOMAIN}`)
+      - traefik.http.routers.papra.entrypoints=websecure
+      - traefik.http.routers.papra.tls.certresolver=le
+      - traefik.http.services.papra.loadbalancer.server.url=http://127.0.0.1:1221

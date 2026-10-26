@@ -1162,6 +1162,7 @@ copy_service papra
 install_fixture papra
 
 rendered="$(render_service papra .env .secrets)"
+rendered_json="$(render_service_json papra .env .secrets)"
 
 assert_render_contains "$rendered" 'name: papra' 'project name missing'
 assert_render_contains "$rendered" "Host(\`docs.example.test\`)" 'host rule missing'
@@ -1170,7 +1171,15 @@ assert_render_contains "$rendered" 'host_ip: 127.0.0.1' 'port is not loopback-bo
 assert_render_contains "$rendered" "$TMP/data/papra/app-data" 'app-data bind missing'
 assert_render_contains "$rendered" 'providerId' 'OIDC provider config missing'
 assert_render_contains "$rendered" 'id.example.test/application/o/papra' 'OIDC discovery URL missing'
-assert_no_volumes "$(render_service_json papra .env .secrets)"
+assert_render_contains "$rendered" 'test-client-id' 'OIDC client id missing'
+assert_render_contains "$rendered" 'test-client-secret' 'OIDC client secret missing'
+assert_no_volumes "$rendered_json"
+assert_mount "$rendered_json" "$TMP/data/papra/app-data" /app/app-data 'app-data bind missing or wrong target' papra
+assert_service_env "$rendered_json" papra APP_BASE_URL https://docs.example.test 'app base URL missing'
+assert_service_env "$rendered_json" papra AUTH_PROVIDERS_EMAIL_IS_ENABLED false 'email auth setting missing'
+assert_service_env "$rendered_json" papra AUTH_SECRET test-secret 'auth secret missing'
+assert_service_env "$rendered_json" papra PAPRA_OIDC_CLIENT_ID test-client-id 'OIDC client id not loaded'
+assert_service_env "$rendered_json" papra PAPRA_OIDC_CLIENT_SECRET test-client-secret 'OIDC client secret not loaded'
 
 if grep -Fq 'priyav.dev' <<< "$rendered"; then
   fail "production domain leaked into rendered compose"
@@ -1194,12 +1203,15 @@ Create `papra/.env.example` with exactly:
 
 ```dotenv
 # Authentik OIDC client values. The client secret belongs in .secrets.
+# Existing servers: copy the client ID from the old Authentik/OIDC config.
 PAPRA_OIDC_CLIENT_ID=
 ```
 
 Create `papra/.secrets.example` with exactly:
 
 ```dotenv
+# Existing servers: copy AUTH_SECRET and the OIDC client secret; rotate the
+# client secret if it has been exposed.
 AUTH_SECRET=
 PAPRA_OIDC_CLIENT_SECRET=
 ```
@@ -1661,6 +1673,10 @@ Postgres/media, Authentik media/certs/templates, and Papra app-data are already
 bind mounts and need no copy. Set `IMMICH_UPLOAD_LOCATION` to the old
 `UPLOAD_LOCATION` value (`/mnt/seagate/Media/Photos` on the reference server),
 and move the old `DB_PASSWORD` into `immich/.secrets`, not `immich/.env`.
+
+For Papra, set `PAPRA_OIDC_CLIENT_ID` to the existing client ID, put the OIDC
+client secret and `AUTH_SECRET` in `papra/.secrets`, and rotate the client
+secret if it has been exposed.
 
 Do not remove the old volumes until the new stack has been verified.
 ````
