@@ -14,10 +14,9 @@ mkdir -p "$backup"
 for service in jellyfin immich tandoor authentik papra checkmate; do
   file="$HOME/$service/docker-compose.yml"
   [[ -f "$file" ]] || file="$HOME/$service/docker-compose.yaml"
-  docker compose -f "$file" config \
-    > "$backup/$service.compose.resolved.yml" 2>/dev/null || true
-  cp "$file" "$backup/" 2>/dev/null || true
-  cp "$HOME/$service/.env" "$backup/$service.env" 2>/dev/null || true
+  docker compose -f "$file" config > "$backup/$service.compose.resolved.yml"
+  cp "$file" "$backup/$service.compose.yml"
+  cp "$HOME/$service/.env" "$backup/$service.env"
 done
 sudo tar -C /home/layz -czf "$backup/data-root.tgz" \
   jellyfin immich tandoor authentik papra checkmate traefik
@@ -321,6 +320,10 @@ instance and remove the staging override and staging ACME file:
 
 ```bash
 docker compose -p traefik-staging --env-file .env -f traefik/compose.yaml -f traefik/compose.staging.yaml down
+
+set -a
+. ./.env
+set +a
 rm traefik/compose.staging.yaml "$DATA_ROOT/traefik/acme-staging.json"
 ```
 
