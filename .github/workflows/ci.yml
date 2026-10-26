@@ -14,7 +14,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Shellcheck
-        run: shellcheck stack tests/*.sh
+        run: shellcheck stack tests/*.sh tools/*.sh
 
       - name: Stack tests
         run: |
@@ -22,9 +22,21 @@ jobs:
           ./tests/check_test.sh
           ./tests/lifecycle_test.sh
           ./tests/update_test.sh
+          ./tests/init_services_test.sh
+          ./tests/migrate_volume_test.sh
 
       - name: Compose render tests
         run: ./tests/compose_render_test.sh
 
+      - name: Phase 2 render tests
+        run: |
+          ./tests/render_immich_test.sh
+          ./tests/render_tandoor_test.sh
+          ./tests/render_authentik_test.sh
+          ./tests/render_papra_test.sh
+          ./tests/render_checkmate_test.sh
+
       - name: Data safety tests
-        run: ./tests/data_safety_test.sh
+        run: |
+          ./tests/data_safety_test.sh
+          ./tests/data_safety_phase2_test.sh
