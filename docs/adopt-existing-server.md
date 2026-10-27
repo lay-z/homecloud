@@ -124,7 +124,8 @@ Create `<service>/.env` and `<service>/.secrets` from the templates. Copy
 existing non-secret values into `.env` and existing secrets into `.secrets`.
 Set `IMMICH_UPLOAD_LOCATION` to the old `UPLOAD_LOCATION`. `chmod 600` each
 `.secrets`. Do not let `./stack init` generate replacements for existing
-secrets. Do not commit either file.
+secrets; it refuses to generate a service's `.secrets` when
+`$DATA_ROOT/<service>` already contains data. Do not commit either file.
 
 After populating them, back up the new repo `.env` and each service `.env` and
 `.secrets` into the section 1 backup directory, using `$backup` from that shell.
@@ -222,8 +223,10 @@ the new URL-safe secret in `papra/.secrets`.
 
 For Checkmate, preserve `ENCRYPTION_KEY` and `CAPTURE_API_SECRET`. Generate a
 new `JWT_SECRET` with `openssl rand -hex 32` and put them in
-`checkmate/.secrets`; do not reuse the exposed JWT secret. The capture service
-maps `CAPTURE_API_SECRET` to `API_SECRET`.
+`checkmate/.secrets`; do not reuse the exposed JWT secret. If you must generate
+a new `ENCRYPTION_KEY`, use `openssl rand -base64 32`; Checkmate requires 32
+bytes encoded as padded base64. The capture service maps `CAPTURE_API_SECRET`
+to `API_SECRET`.
 
 For Tandoor, move the existing `SECRET_KEY`, `POSTGRES_PASSWORD`, and
 `EMAIL_HOST_PASSWORD` into `tandoor/.secrets`. The Postgres container must use

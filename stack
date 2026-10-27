@@ -39,7 +39,8 @@ check_service_secrets() {
   local dir="$1"
   local example="$dir/.secrets.example"
   local target="$dir/.secrets"
-  local line key value
+  local line key value entry
+  local -a entries
 
   [[ -f "$example" ]] || return 0
   [[ -f "$target" ]] || die "missing ${target#"$ROOT"/}"
@@ -53,6 +54,14 @@ check_service_secrets() {
     key="${BASH_REMATCH[1]}"
     value="$(grep -E "^${key}=" "$target" | tail -n1 | cut -d= -f2- || true)"
     [[ -n "$value" ]] || die "empty secret $key in ${target#"$ROOT"/}"
+
+    if [[ "$key" == "ENCRYPTION_KEY" ]]; then
+      IFS=',' read -ra entries <<< "$value"
+      for entry in "${entries[@]}"; do
+        [[ "$entry" =~ ^[A-Za-z0-9+/]{43}=$ ]] ||
+          die "ENCRYPTION_KEY in ${target#"$ROOT"/} must be 32 bytes as base64 (openssl rand -base64 32)"
+      done
+    fi
   done < "$example"
 }
 
@@ -105,6 +114,19 @@ enabled_services() {
   done
 }
 
+generate_secret() {
+  local key="$1"
+
+  case "$key" in
+    ENCRYPTION_KEY)
+      openssl rand -base64 32
+      ;;
+    *)
+      openssl rand -hex 32
+      ;;
+  esac
+}
+
 generate_service_secrets() {
   local dir="$1"
   local example="$dir/.secrets.example"
@@ -124,7 +146,7 @@ generate_service_secrets() {
       fi
       [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]] || continue
       key="${BASH_REMATCH[1]}"
-      printf '%s=%s\n' "$key" "$(openssl rand -hex 32)" >> "$target"
+      printf '%s=%s\n' "$key" "$(generate_secret "$key")" >> "$target"
     done < "$example"
 
     umask "$old_umask"
@@ -135,17 +157,28 @@ generate_service_secrets() {
 
 cmd_init() {
   local created_env=0
-  local dir svc
+  local dir svc data_dir
 
   if [[ ! -f "$ROOT/.env" ]]; then
     cp "$ROOT/.env.example" "$ROOT/.env"
     created_env=1
   fi
 
+  if (( ! created_env )); then
+    load_env
+  fi
+
   for dir in "$ROOT"/*/; do
     [[ -f "$dir/.env.example" ]] || continue
     if [[ ! -f "$dir/.env" ]]; then
       cp "$dir/.env.example" "$dir/.env"
+    fi
+    if (( ! created_env )) && [[ -n "${DATA_ROOT:-}" ]] && [[ ! -f "$dir/.secrets" ]]; then
+      svc="$(basename "$dir")"
+      data_dir="$DATA_ROOT/$svc"
+      if [[ -d "$data_dir" ]] && [[ -n "$(ls -A "$data_dir" 2>/dev/null)" ]]; then
+        die "refusing to generate new secrets for $svc: $data_dir contains data but $svc/.secrets is missing; restore the existing secrets first"
+      fi
     fi
     generate_service_secrets "$dir"
   done
@@ -155,8 +188,6 @@ cmd_init() {
     info "edit BASE_DOMAIN, ACME_EMAIL, DATA_ROOT, and ENABLED_SERVICES, then rerun ./stack init"
     return 0
   fi
-
-  load_env
 
   mkdir -p "$DATA_ROOT/traefik"
 

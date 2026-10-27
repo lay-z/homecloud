@@ -9,7 +9,11 @@ make_repo "$repo"
 for svc in immich tandoor authentik papra checkmate; do
   mkdir -p "$repo/$svc"
   printf 'SERVICE_VALUE=test\n' > "$repo/$svc/.env.example"
-  printf 'SERVICE_SECRET=\n' > "$repo/$svc/.secrets.example"
+  if [[ "$svc" == checkmate ]]; then
+    printf 'JWT_SECRET=\nENCRYPTION_KEY=\n' > "$repo/$svc/.secrets.example"
+  else
+    printf 'SERVICE_SECRET=\n' > "$repo/$svc/.secrets.example"
+  fi
 done
 
 cp "$repo/.env.example" "$repo/.env"
@@ -27,5 +31,11 @@ for dir in \
   checkmate/mongo-data checkmate/mongo-configdb; do
   assert_dir "$TMP/data/$dir"
 done
+
+jwt_secret="$(sed -n 's/^JWT_SECRET=//p' "$repo/checkmate/.secrets")"
+[[ "$jwt_secret" =~ ^[0-9a-f]{64}$ ]] || fail "JWT_SECRET is not 32 bytes of hex"
+
+encryption_key="$(sed -n 's/^ENCRYPTION_KEY=//p' "$repo/checkmate/.secrets")"
+[[ "$encryption_key" =~ ^[A-Za-z0-9+/]{43}=$ ]] || fail "ENCRYPTION_KEY is not 32 bytes of base64"
 
 printf 'init service tests passed\n'

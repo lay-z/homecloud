@@ -49,4 +49,19 @@ assert_contains "$DOCKER_LOG" "--env-file $repo/jellyfin/.secrets"
 assert_contains "$DOCKER_LOG" "jellyfin/compose.yaml config -q"
 assert_contains "$DOCKER_LOG" "traefik/compose.yaml config -q"
 
+mkdir -p "$repo/checkmate" "$TMP/data/checkmate"
+printf 'name: checkmate\nservices:\n  checkmate:\n    image: checkmate\n' > "$repo/checkmate/compose.yaml"
+printf 'ENCRYPTION_KEY=\n' > "$repo/checkmate/.secrets.example"
+: > "$repo/checkmate/.env"
+printf 'ENCRYPTION_KEY=not-base64\n' > "$repo/checkmate/.secrets"
+chmod 600 "$repo/checkmate/.secrets"
+sed -i 's|^ENABLED_SERVICES=.*|ENABLED_SERVICES=jellyfin,checkmate|' "$repo/.env"
+
+if "$repo/stack" check >/dev/null 2>&1; then
+  fail "check accepted an invalid ENCRYPTION_KEY"
+fi
+
+printf 'ENCRYPTION_KEY=Y2hlY2ttYXRlLXRlc3QtZW5jcnlwdGlvbi1rZXktMzI=\n' > "$repo/checkmate/.secrets"
+"$repo/stack" check >/dev/null
+
 printf 'check tests passed\n'

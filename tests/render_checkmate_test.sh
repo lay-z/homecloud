@@ -39,7 +39,7 @@ assert_service_env "$rendered_json" checkmate DB_CONNECTION_STRING mongodb://mon
 assert_service_env "$rendered_json" checkmate CLIENT_HOST https://status.example.test 'client host missing'
 assert_service_env "$rendered_json" checkmate CLIENT_CONFIG_CLIENT_HOST https://status.example.test 'client config host missing'
 assert_service_env "$rendered_json" checkmate JWT_SECRET test-jwt 'checkmate JWT secret missing'
-assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY test-encryption 'checkmate encryption key missing'
+assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY Y2hlY2ttYXRlLXRlc3QtZW5jcnlwdGlvbi1rZXktMzI= 'checkmate encryption key missing'
 assert_service_env_absent "$rendered_json" checkmate CAPTURE_API_SECRET 'checkmate must not receive the capture secret'
 assert_service_env "$rendered_json" capture API_SECRET test-capture 'capture API secret missing'
 assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missing'

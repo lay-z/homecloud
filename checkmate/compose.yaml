@@ -9,8 +9,8 @@ services:
     env_file:
       - .env
     environment:
-      JWT_SECRET: ${JWT_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
       DB_CONNECTION_STRING: mongodb://mongodb:27017/uptime_db
       CLIENT_HOST: https://status.${BASE_DOMAIN}
       CLIENT_CONFIG_CLIENT_HOST: https://status.${BASE_DOMAIN}

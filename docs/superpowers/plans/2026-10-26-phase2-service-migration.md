@@ -1370,7 +1370,7 @@ Create `tests/fixtures/checkmate.secrets` with exactly:
 
 ```dotenv
 JWT_SECRET=test-jwt
-ENCRYPTION_KEY=test-encryption
+ENCRYPTION_KEY=Y2hlY2ttYXRlLXRlc3QtZW5jcnlwdGlvbi1rZXktMzI=
 CAPTURE_API_SECRET=test-capture
 ```
 
@@ -1420,7 +1420,7 @@ assert_service_env "$rendered_json" checkmate DB_CONNECTION_STRING mongodb://mon
 assert_service_env "$rendered_json" checkmate CLIENT_HOST https://status.example.test 'client host missing'
 assert_service_env "$rendered_json" checkmate CLIENT_CONFIG_CLIENT_HOST https://status.example.test 'client config host missing'
 assert_service_env "$rendered_json" checkmate JWT_SECRET test-jwt 'checkmate JWT secret missing'
-assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY test-encryption 'checkmate encryption key missing'
+assert_service_env "$rendered_json" checkmate ENCRYPTION_KEY Y2hlY2ttYXRlLXRlc3QtZW5jcnlwdGlvbi1rZXktMzI= 'checkmate encryption key missing'
 assert_service_env_absent "$rendered_json" checkmate CAPTURE_API_SECRET 'checkmate must not receive the capture secret'
 assert_service_env "$rendered_json" capture API_SECRET test-capture 'capture API secret missing'
 assert_service_env "$rendered_json" capture GIN_MODE release 'capture mode missing'
@@ -1470,6 +1470,7 @@ Create `checkmate/.secrets.example` with exactly:
 ```dotenv
 # Existing servers: preserve ENCRYPTION_KEY and CAPTURE_API_SECRET.
 # Generate a new JWT_SECRET; do not reuse the exposed JWT secret.
+# ENCRYPTION_KEY must be 32 bytes as base64 (openssl rand -base64 32).
 JWT_SECRET=
 ENCRYPTION_KEY=
 CAPTURE_API_SECRET=
@@ -2121,8 +2122,10 @@ the new URL-safe secret in `papra/.secrets`.
 
 For Checkmate, preserve `ENCRYPTION_KEY` and `CAPTURE_API_SECRET`. Generate a
 new `JWT_SECRET` with `openssl rand -hex 32` and put them in
-`checkmate/.secrets`; do not reuse the exposed JWT secret. The capture service
-maps `CAPTURE_API_SECRET` to `API_SECRET`.
+`checkmate/.secrets`; do not reuse the exposed JWT secret. If you must generate
+a new `ENCRYPTION_KEY`, use `openssl rand -base64 32`; Checkmate requires 32
+bytes encoded as padded base64. The capture service maps `CAPTURE_API_SECRET`
+to `API_SECRET`.
 
 For Tandoor, move the existing `SECRET_KEY`, `POSTGRES_PASSWORD`, and
 `EMAIL_HOST_PASSWORD` into `tandoor/.secrets`. The Postgres container must use
@@ -2428,7 +2431,9 @@ stop nginx.
       the new URL-safe value in `papra/.secrets`; do not reuse the exposed
       secret.
 - [ ] If any other existing secret is empty, generate one with
-      `openssl rand -hex 32`; otherwise `stack check` rejects the empty secret.
+      `openssl rand -hex 32`, except Checkmate `ENCRYPTION_KEY` which needs
+      `openssl rand -base64 32`; otherwise `stack check` rejects the empty
+      secret.
 - [ ] Set `IMMICH_UPLOAD_LOCATION` to the old `UPLOAD_LOCATION` path.
 - [ ] `chmod 600` every `*/.secrets` file.
 - [ ] Set `DATA_ROOT=/home/layz`, `BASE_DOMAIN=priyav.dev`, and

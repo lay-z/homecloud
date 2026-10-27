@@ -25,4 +25,11 @@ assert_eq "$(stat -c %a "$TMP/data/traefik/acme.json")" "600"
 assert_file "$TMP/data/jellyfin/config"
 assert_file "$TMP/data/jellyfin/cache"
 
+rm "$repo/jellyfin/.secrets"
+printf 'existing data\n' > "$TMP/data/jellyfin/config/existing.db"
+if "$repo/stack" init >/dev/null 2>&1; then
+  fail "init generated secrets for a service with existing data"
+fi
+[[ ! -f "$repo/jellyfin/.secrets" ]] || fail "init wrote .secrets for a service with existing data"
+
 printf 'init tests passed\n'
