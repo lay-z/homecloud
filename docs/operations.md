@@ -22,6 +22,73 @@ anonymous data volumes. `docker compose down -v`, `docker volume prune`, and
 Bind mounts do not protect against `rm -rf ${DATA_ROOT}` or disk failure. Keep
 independent backups.
 
+## Migrating existing named volumes
+
+Run only the block for the service being swapped; do not run all four at once.
+Do not stop all four volume owners together; stopping Authentik early breaks
+Papra OIDC logins. Restart or swap the service immediately after its block; do
+not leave it down.
+
+Stop the owning container before copying. The tool refuses a non-empty
+destination. If a copy fails partway, remove only that failed partial copy;
+never delete a populated destination.
+
+```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
+# Immich
+docker stop --time 60 immich_machine_learning
+./tools/migrate-volume.sh immich_model-cache "$DATA_ROOT/immich/model-cache"
+```
+
+```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
+# Tandoor
+docker stop --time 60 tandoor-web_recipes-1
+./tools/migrate-volume.sh tandoor_staticfiles "$DATA_ROOT/tandoor/staticfiles"
+```
+
+```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
+# Checkmate
+docker stop --time 60 checkmate-mongodb-1
+./tools/migrate-volume.sh checkmate_mongo-data "$DATA_ROOT/checkmate/mongo-data"
+```
+
+```bash
+set -euo pipefail
+set -a
+. ./.env
+set +a
+: "${DATA_ROOT:?run from the repo root with .env loaded}"
+
+# Authentik
+docker stop --time 60 authentik-postgresql-1
+./tools/migrate-volume.sh authentik_database "$DATA_ROOT/authentik/database"
+```
+
+Immich's Redis data is a pure cache. Start it with an empty
+`${DATA_ROOT}/immich/redis` instead of copying the anonymous volume.
+Checkmate's `/data/configdb` volume is empty; create
+`${DATA_ROOT}/checkmate/mongo-configdb` and leave it empty.
+
+Do not delete the old volumes until the new containers have been running and
+verified for an agreed period.
+
 ## Updates
 
 ```bash
@@ -50,6 +117,7 @@ first. Database migrations may not be reversible.
 Back up these separately:
 
 - `${DATA_ROOT}`: application data and databases
+- `/mnt/seagate`: Jellyfin media and Immich uploads
 - root `.env`
 - every `*/.env`
 - every `*/.secrets`
@@ -80,6 +148,7 @@ ss -ltnp | grep 8096
 
 ## Security
 
-Traefik and Checkmate mount the Docker socket read-only, but that is still
+Traefik and Checkmate mount the Docker socket read-only; Authentik's worker
+mounts it read-write and runs as root for outpost management. All three are
 root-equivalent on the host. Do not run untrusted containers. Do not expose the
 Traefik dashboard.

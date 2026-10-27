@@ -15,6 +15,16 @@ printf '%s\n' "$*" >> "${DOCKER_LOG:?}"
 if [[ "${DOCKER_VOLUME_JSON:-0}" == "1" && "$*" == *"config --format json"* ]]; then
   printf '{"services":{"x":{"volumes":[{"type":"volume"}]}}}\n'
 fi
+if [[ "${DOCKER_PS_FAIL:-0}" == "1" && "$*" == *"ps -q"* ]]; then
+  exit 1
+fi
+if [[ -n "${DOCKER_MISSING_VOLUME:-}" && "$*" == "volume inspect $DOCKER_MISSING_VOLUME" ]]; then
+  exit 1
+fi
+if [[ -n "${DOCKER_BUSY_VOLUME:-}" && "$*" == "ps -q --filter volume=$DOCKER_BUSY_VOLUME" ]]; then
+  printf 'fake-container-id\n'
+  exit 0
+fi
 exit 0
 FAKE
 chmod +x "$TMP/bin/docker"
@@ -26,6 +36,10 @@ fail() {
 
 assert_file() {
   [[ -e "$1" ]] || fail "missing file: $1"
+}
+
+assert_dir() {
+  [[ -d "$1" ]] || fail "missing directory: $1"
 }
 
 assert_eq() {

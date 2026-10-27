@@ -65,16 +65,17 @@ Persistent data lives under `${DATA_ROOT}/<service>`, never inside the repo.
 
 ## Services
 
-| Service | Domain | Upstream |
-| --- | --- | --- |
-| Jellyfin | `flix.<base>` | `127.0.0.1:8096` |
-| Immich | `photos.<base>` | `127.0.0.1:2283` |
-| Tandoor | `recipes.<base>` | `127.0.0.1:8979` |
-| Authentik | `id.<base>` | `127.0.0.1:9000` |
-| Papra | `docs.<base>` | `127.0.0.1:1221` |
-| Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` |
+| Service | Domain | Upstream | Status |
+| --- | --- | --- | --- |
+| Jellyfin | `flix.<base>` | `127.0.0.1:8096` | converted |
+| Immich | `photos.<base>` | `127.0.0.1:2283` | converted |
+| Tandoor | `recipes.<base>` | `127.0.0.1:8979` | converted |
+| Authentik | `id.<base>` | `127.0.0.1:9000` | converted |
+| Papra | `docs.<base>` | `127.0.0.1:1221` | converted |
+| Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` | converted |
 
-Only Jellyfin is converted in this phase. The others are follow-on work.
+All public services are converted to per-service directories. nginx still owns
+ports 80 and 443 until Phase 3 cuts ingress over to Traefik.
 
 ## Updates
 
@@ -94,7 +95,8 @@ uses a named or anonymous data volume. `stack down` rejects `-v` and
 `--volumes`, and `stack check` fails if a rendered mount has `type: volume`.
 `docker compose down -v` and volume pruning therefore cannot remove application
 data. Back up `${DATA_ROOT}` separately; bind mounts do not protect against
-`rm -rf`.
+`rm -rf`. Jellyfin media and Immich uploads (for example `/mnt/seagate`) are
+outside `${DATA_ROOT}` and need separate backups.
 
 ## Notes
 
@@ -102,5 +104,5 @@ data. Back up `${DATA_ROOT}` separately; bind mounts do not protect against
   deployment. It is not required to use this stack.
 - `docs/install.md`, `docs/operations.md`, and `docs/adopt-existing-server.md`
   cover the details.
-- Never commit `.env`, `*/.env`, `*/.secrets`, `.namecheap.env`, or
-  `*/compose.override.yaml`.
+- Never commit `.env`, `*/.env`, `*/.secrets`, `.namecheap.env`,
+  `*/compose.override.yaml`, or `*/compose.staging.yaml`.

@@ -1,0 +1,8 @@
+services:
+  checkmate:
+    group_add:
+      - "957"
+  capture:
+    volumes:
+      - /mnt/old-home:/mnt/old-home:ro
+      - /mnt/seagate:/mnt/seagate:ro
