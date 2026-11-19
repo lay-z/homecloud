@@ -112,6 +112,24 @@ git checkout <previous-tag>
 Back up `${DATA_ROOT}`, the root `.env`, and all `*/.env` / `*/.secrets` files
 first. Database migrations may not be reversible.
 
+### Optional update timer
+
+The units in `systemd/` run `./stack update` daily at 04:00 with up to an hour
+of random delay. They are not installed automatically.
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/stack-update.service systemd/stack-update.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now stack-update.timer
+loginctl enable-linger "$USER"
+```
+
+The units assume the checkout is `~/stack`; edit `WorkingDirectory` and
+`ExecStart` otherwise. Check the result with
+`systemctl --user list-timers stack-update.timer` and
+`journalctl --user -u stack-update.service`.
+
 ## Backups
 
 Back up these separately:

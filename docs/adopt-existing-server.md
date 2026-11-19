@@ -1,9 +1,13 @@
 # Adopt an existing server
 
-This runbook is for the reference server, which currently runs nginx and
-per-service compose files under `~/<service>/`. All services are already
-converted to Traefik routes. Sections 1-5 and 9 are Phase 2; sections 6-8 are
-Phase 3. Complete section 9 for every service before section 6.
+> Status: the reference server completed the Phase 3 cutover on 2026-11-19.
+> Traefik now owns ports 80 and 443. Keep this runbook for re-adoption and
+> rollback; do not run the cutover block again on a healthy instance.
+
+This runbook is for a server that still runs nginx and per-service compose files
+under `~/<service>/`. All services are already converted to Traefik routes.
+Sections 1-5 and 9 are Phase 2; sections 6-8 are Phase 3. Complete section 9 for
+every service before section 6.
 
 ## 1. Back up
 

@@ -51,6 +51,21 @@ docker logs traefik --tail=50
 
 The first request may take a few seconds while Traefik obtains the certificate.
 
+## Optional automatic updates
+
+The repo ships opt-in systemd user units that run `./stack update` daily:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/stack-update.service systemd/stack-update.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now stack-update.timer
+loginctl enable-linger "$USER"
+```
+
+The units assume the checkout is `~/stack`; edit `WorkingDirectory` and
+`ExecStart` otherwise. The timer is not enabled by default.
+
 ## Hardware transcoding
 
 The base Jellyfin compose does not request `/dev/dri`. On hosts that have it:

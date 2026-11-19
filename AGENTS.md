@@ -31,10 +31,11 @@ persistent paths are bind mounts; do not introduce named or anonymous volumes.
 
 ## Current phase
 
-Phase 2 converted Immich, Tandoor, Authentik, Papra, and Checkmate. Every public
-service now has a Traefik route and bind-mounted data. nginx still owns ports 80
-and 443; Phase 3 performs the ingress cutover and adds the update timer. Do not
-stop nginx until the cutover is explicitly scheduled.
+Phase 3 is complete on the reference server. Traefik owns ports 80 and 443 and
+serves every public service from its per-service stack. nginx is stopped; the
+old compose files, old named volumes, and `~/nginx` remain the rollback path
+until the migration has been stable for an agreed period. The opt-in
+`stack-update.timer` lives in `systemd/` and is not installed by default.
 
 ## Server notes
 
@@ -42,3 +43,5 @@ stop nginx until the cutover is explicitly scheduled.
 - Current data root: `/home/layz`
 - Current media path: `/mnt/seagate`
 - Traefik and Checkmate use `/var/run/docker.sock:ro`; Authentik's worker uses it read-write as root. All are root-equivalent.
+- Docker Engine 29 rejects old API clients; Traefik must stay at v3.6 or newer.
+- The update timer runs as a systemd user unit and needs docker group access.

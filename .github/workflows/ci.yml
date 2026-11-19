@@ -24,6 +24,7 @@ jobs:
           ./tests/update_test.sh
           ./tests/init_services_test.sh
           ./tests/migrate_volume_test.sh
+          ./tests/systemd_units_test.sh
 
       - name: Compose render tests
         run: ./tests/compose_render_test.sh

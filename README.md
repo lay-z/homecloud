@@ -74,8 +74,9 @@ Persistent data lives under `${DATA_ROOT}/<service>`, never inside the repo.
 | Papra | `docs.<base>` | `127.0.0.1:1221` | converted |
 | Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` | converted |
 
-All public services are converted to per-service directories. nginx still owns
-ports 80 and 443 until Phase 3 cuts ingress over to Traefik.
+All public services are converted to per-service directories. Traefik owns ports
+80 and 443. On the reference server nginx is stopped; the old stacks, old named
+volumes, and `~/nginx` are kept as the rollback path.
 
 ## Updates
 
@@ -83,6 +84,20 @@ ports 80 and 443 until Phase 3 cuts ingress over to Traefik.
 git fetch --tags
 ./stack update
 ```
+
+Automatic updates are opt-in. Install the user units once, using the checkout
+path in `WorkingDirectory` / `ExecStart` if it is not `~/stack`:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/stack-update.service systemd/stack-update.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now stack-update.timer
+loginctl enable-linger "$USER"   # runs without an active login session
+```
+
+The timer runs `./stack update` daily around 04:00 with up to an hour of random
+delay. Disable it with `systemctl --user disable --now stack-update.timer`.
 
 Rollback is `git checkout <previous-tag> && ./stack up`. Back up
 `${DATA_ROOT}`, the root `.env`, and all `*/.env` / `*/.secrets` files before
