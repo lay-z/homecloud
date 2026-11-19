@@ -1,5 +1,8 @@
 # Repo Deployment Foundation Implementation Plan
 
+> **Status:** complete; shipped as `v0.1.0`. The checkboxes below are kept as
+> written and are not updated to reflect execution.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the reusable repo foundation and migrate Jellyfin to it, without cutting production ingress over yet.
