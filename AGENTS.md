@@ -14,7 +14,13 @@ labels.
 ./stack logs <service>
 ./stack update
 ./stack doctor
+./stack migrate plan
+./stack migrate run <id> --yes
 ```
+
+`./stack migrate` runs staged data migrations that cannot be expressed as a
+compose edit. `migrations/manifest.tsv` is the ordered list; each step records
+success under `${DATA_ROOT}/.migrations`. See `docs/upgrades.md`.
 
 ## Layout
 
@@ -23,6 +29,7 @@ labels.
 - `<service>/.secrets`: service secrets, mode 0600 (gitignored)
 - `<service>/compose.override.yaml`: host-specific overrides (gitignored)
 - root `.env`: instance values (gitignored)
+- `migrations/`: staged data migrations and their manifest
 - `tools/dns/`: optional Namecheap tooling
 
 Images are pinned as `tag@sha256`. Change them only by pull request and a
