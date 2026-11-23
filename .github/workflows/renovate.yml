@@ -36,6 +36,7 @@ jobs:
             echo "RENOVATE_TOKEN is not configured; skipping."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
+            echo "RENOVATE_TOKEN is configured; running Renovate."
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
