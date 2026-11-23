@@ -139,7 +139,7 @@ watching the registries and reporting new upstream builds.
 Enable `wud` and `authentik` in `ENABLED_SERVICES`, then:
 
 ```bash
-$EDITOR wud/.secrets    # WUD_TRIGGER_TELEGRAM_NOTIFY_BOTTOKEN / CHATID
+$EDITOR wud/.secrets    # append WUD_TRIGGER_TELEGRAM_NOTIFY_BOTTOKEN / CHATID
 ./stack init
 ./stack up
 ```

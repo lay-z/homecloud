@@ -110,7 +110,7 @@ updating. Database migrations may not be reversible.
 pinned as `tag@sha256`, a plain `docker compose pull` downloads nothing new.
 
 `wud` reports what upstream has published instead. Enable it by adding `wud`
-and `authentik` to `ENABLED_SERVICES`, setting the Telegram values in
+and `authentik` to `ENABLED_SERVICES`, adding the Telegram credentials to
 `wud/.secrets`, then running `./stack init` and `./stack up`:
 
 ```dotenv
@@ -118,10 +118,14 @@ ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate,wud
 ```
 
 ```bash
-$EDITOR wud/.secrets   # bot token from @BotFather, chat id from @userinfobot
+$EDITOR wud/.secrets   # append BOTTOKEN and CHATID, see the commented example
 ./stack init           # creates ${DATA_ROOT}/wud/store
 ./stack up
 ```
+
+Append both Telegram values; with them missing WUD simply runs without a
+Telegram trigger. `GET https://api.telegram.org/bot<token>/getUpdates` returns
+the chat ID after you send the bot a message.
 
 WUD checks registries every six hours (`WUD_WATCHER_LOCAL_CRON` in
 `wud/.env`) and sends one batched Telegram message per detection cycle.
