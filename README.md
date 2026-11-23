@@ -152,9 +152,10 @@ Rotate the client secret by changing it in the root `.env`, touching
 
 ## Dependency updates
 
-Image pins change by pull request, not by hand. `renovate.json` runs weekly on
-Monday morning, groups digest and patch bumps into one PR, opens a separate
-minor PR, and leaves majors waiting for a checkbox on the dependency dashboard.
+Image pins change by pull request, not by hand. The scheduled workflow runs
+weekly on Monday and opens grouped PRs: digest and patch bumps together, minors
+separately, majors held for a checkbox on the dependency dashboard. Renovate has
+no schedule of its own, so a manual dispatch acts immediately.
 
 The workflow in `.github/workflows/renovate.yml` is inert until a token exists:
 

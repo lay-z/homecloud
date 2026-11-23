@@ -191,9 +191,10 @@ appears under Authentik's Applications.
 
 ## Dependency updates
 
-Image pins change through pull requests, never by hand. `renovate.json` runs
-weekly and opens grouped PRs: digest and patch bumps together, minors separately,
-majors held for approval on the dependency dashboard.
+Image pins change through pull requests, never by hand. The workflow runs weekly
+and opens grouped PRs: digest and patch bumps together, minors separately, majors
+held for approval on the dependency dashboard. Renovate has no separate
+schedule, so a manual workflow dispatch acts immediately.
 
 The workflow is inert until a token exists:
 
