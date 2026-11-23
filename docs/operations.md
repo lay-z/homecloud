@@ -191,21 +191,10 @@ appears under Authentik's Applications.
 
 ## Dependency updates
 
-Image pins change through pull requests, never by hand. The workflow runs weekly
-and opens grouped PRs: digest and patch bumps together, minors separately, majors
-held for approval on the dependency dashboard. Renovate has no separate
-schedule, so a manual workflow dispatch acts immediately.
-
-The workflow is inert until a token exists:
-
-```bash
-gh secret set RENOVATE_TOKEN   # fine-grained PAT: Contents RW, Pull requests RW, Issues RW
-gh workflow run renovate.yml
-```
-
-A PAT is required because PRs opened with `GITHUB_TOKEN` do not trigger CI.
-Installing the Mend-hosted Renovate app and deleting the workflow is an
-equivalent alternative for public repositories.
+Image pins change through pull requests, never by hand. No runner opens them
+automatically at the moment; `renovate.json` records the intended grouping
+(digest and patch together, minors separately, majors gated) for whichever
+tooling ends up doing it. CI must pass before a pin bump merges.
 
 Merge, tag, deploy:
 

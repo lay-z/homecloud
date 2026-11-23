@@ -152,22 +152,10 @@ Rotate the client secret by changing it in the root `.env`, touching
 
 ## Dependency updates
 
-Image pins change by pull request, not by hand. The scheduled workflow runs
-weekly on Monday and opens grouped PRs: digest and patch bumps together, minors
-separately, majors held for a checkbox on the dependency dashboard. Renovate has
-no schedule of its own, so a manual dispatch acts immediately.
-
-The workflow in `.github/workflows/renovate.yml` is inert until a token exists:
-
-```bash
-gh secret set RENOVATE_TOKEN   # fine-grained PAT: Contents RW, Pull requests RW, Issues RW
-gh workflow run renovate.yml
-```
-
-A PAT is required instead of the workflow token because PRs opened with
-`GITHUB_TOKEN` do not trigger CI, and every pin bump must pass the render tests.
-Alternatively, install the Mend-hosted Renovate app on the repository and
-delete the workflow; public repositories are free.
+Image pins change by pull request, not by hand. Nothing opens them
+automatically right now; `renovate.json` records the policy a runner should
+follow: digest and patch bumps together, minors separately, majors held for
+approval. CI must pass before a pin bump merges.
 
 Merging a PR does not deploy anything. Tag the release and update the server:
 
