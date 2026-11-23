@@ -189,6 +189,40 @@ If sign-in fails, check that the blueprint applied
 (`docker logs authentik-worker-1 --tail=50`) and that the `wud` application
 appears under Authentik's Applications.
 
+## Dependency updates
+
+Image pins change through pull requests, never by hand. `renovate.json` runs
+weekly and opens grouped PRs: digest and patch bumps together, minors separately,
+majors held for approval on the dependency dashboard.
+
+The workflow is inert until a token exists:
+
+```bash
+gh secret set RENOVATE_TOKEN   # fine-grained PAT: Contents RW, Pull requests RW, Issues RW
+gh workflow run renovate.yml
+```
+
+A PAT is required because PRs opened with `GITHUB_TOKEN` do not trigger CI.
+Installing the Mend-hosted Renovate app and deleting the workflow is an
+equivalent alternative for public repositories.
+
+Merge, tag, deploy:
+
+```bash
+gh pr merge --squash --delete-branch
+git switch main && git pull --ff-only
+git tag -a v0.4.0 -m "v0.4.0" && git push origin v0.4.0
+ssh homeserver 'cd ~/stack && ./stack update'
+```
+
+Do not skip the tag: `stack update` deploys a release tag, so a merge that is
+never tagged never reaches the server. Rollback is
+`git checkout <previous-tag> && ./stack up`.
+
+For a major bump, read the release notes first. Authentik, Immich, Tandoor, and
+Checkmate can migrate their databases, and reverting the image does not revert
+the schema.
+
 ## Backups
 
 Back up these separately:

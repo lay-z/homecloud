@@ -150,6 +150,41 @@ Rotate the client secret by changing it in the root `.env`, touching
 `authentik/blueprints/wud.yaml` so Authentik applies it again, and running
 `./stack up`.
 
+## Dependency updates
+
+Image pins change by pull request, not by hand. `renovate.json` runs weekly on
+Monday morning, groups digest and patch bumps into one PR, opens a separate
+minor PR, and leaves majors waiting for a checkbox on the dependency dashboard.
+
+The workflow in `.github/workflows/renovate.yml` is inert until a token exists:
+
+```bash
+gh secret set RENOVATE_TOKEN   # fine-grained PAT: Contents RW, Pull requests RW, Issues RW
+gh workflow run renovate.yml
+```
+
+A PAT is required instead of the workflow token because PRs opened with
+`GITHUB_TOKEN` do not trigger CI, and every pin bump must pass the render tests.
+Alternatively, install the Mend-hosted Renovate app on the repository and
+delete the workflow; public repositories are free.
+
+Merging a PR does not deploy anything. Tag the release and update the server:
+
+```bash
+gh pr merge --squash --delete-branch
+git switch main && git pull --ff-only
+git tag -a v0.4.0 -m "v0.4.0" && git push origin v0.4.0
+ssh homeserver 'cd ~/stack && ./stack update'
+```
+
+Rollback is `git checkout <previous-tag> && ./stack up` on the server. Read a
+major bump's release notes before merging it: Authentik, Immich, Tandoor, and
+Checkmate can change database schemas, and an image rollback does not undo a
+migration.
+
+Images pinned as `latest@sha256` (Papra, Tandoor, Checkmate) can only receive
+digest updates, because the tag itself carries no version. That is expected.
+
 ## Data safety
 
 Every persistent path is a bind mount under `${DATA_ROOT}/<service>`. No service

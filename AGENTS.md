@@ -25,6 +25,10 @@ labels.
 - root `.env`: instance values (gitignored)
 - `tools/dns/`: optional Namecheap tooling
 
+Images are pinned as `tag@sha256`. Change them only by merging a Renovate PR
+and tagging a release; `stack update` deploys tags, not branches, and refuses a
+dirty tree.
+
 Persistent data lives under `${DATA_ROOT}/<service>`, outside the repo. All
 persistent paths are bind mounts; do not introduce named or anonymous volumes.
 `stack check` rejects `type: volume`, and `stack down -v` is rejected.

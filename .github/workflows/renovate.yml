@@ -1,0 +1,54 @@
+name: renovate
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Log level
+        type: choice
+        default: info
+        options:
+          - info
+          - debug
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      # A PAT is required rather than GITHUB_TOKEN: pull requests opened with
+      # the workflow token do not trigger the CI workflow, and every Renovate
+      # PR must be able to run the render tests before it is merged.
+      - name: Check for token
+        id: check
+        env:
+          TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "RENOVATE_TOKEN is not configured; skipping."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.configured == 'true'
+        uses: actions/checkout@v4
+
+      - name: Renovate
+        if: steps.check.outputs.configured == 'true'
+        uses: renovatebot/github-action@v41
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
