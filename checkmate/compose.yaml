@@ -3,7 +3,7 @@ name: checkmate
 services:
   checkmate:
     container_name: checkmate-checkmate-1
-    image: ghcr.io/bluewave-labs/checkmate:latest@sha256:bccfe26411a52590ec67e9c6a890a66c154e10b89a7598c6ae00262f3a88b3de
+    image: ghcr.io/bluewave-labs/checkmate:latest@sha256:f66a53fce561a526f939d994337843ac03211364daa3fd1de3a492c895c503d5
     restart: unless-stopped
     stop_grace_period: 60s
     env_file:
@@ -38,7 +38,7 @@ services:
 
   mongodb:
     container_name: checkmate-mongodb-1
-    image: mongo:8.0@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+    image: mongo:8.0@sha256:479e85ced54ffb8a40dade1dcde2da2a9ae858515b9415e9cc54bfb8f0575d01
     restart: unless-stopped
     command: ["mongod", "--quiet", "--bind_ip_all"]
     volumes:
@@ -56,7 +56,7 @@ services:
 
   capture:
     container_name: checkmate-capture-1
-    image: ghcr.io/bluewave-labs/capture:latest@sha256:c4917c572b12d4068b5987494132da728363591ec9227a116ef07cd77222292f
+    image: ghcr.io/bluewave-labs/capture:latest@sha256:e7fefcdf2d26388807bbe158fa1a1011b4ecdc16efddb5964b63feb3c68020f7
     restart: unless-stopped
     environment:
       GIN_MODE: release

@@ -2,7 +2,7 @@ name: traefik
 
 services:
   traefik:
-    image: traefik:v3.6.25
+    image: traefik:v3.7.19@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     container_name: traefik
     restart: unless-stopped
     network_mode: host
