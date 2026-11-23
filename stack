@@ -453,6 +453,10 @@ cmd_doctor() {
   done
 }
 
+cmd_migrate() {
+  STACK_ROOT="$ROOT" "$ROOT/tools/migrate.sh" "$@"
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage: ./stack <command>
@@ -466,6 +470,7 @@ Commands:
   logs <service>       Follow logs for a service
   restart <service>    Restart a service
   update [--version v] Check out a release tag and redeploy
+  migrate <command>    Run staged data migrations (list, plan, run, status)
   doctor               Print redacted diagnostics
 EOF
 }
@@ -482,6 +487,7 @@ main() {
     logs) cmd_logs "$@";;
     restart) cmd_restart "$@";;
     update) cmd_update "$@";;
+    migrate) cmd_migrate "$@";;
     doctor) cmd_doctor "$@";;
     init) cmd_init "$@";;
     help|-h|--help) cmd_help;;
