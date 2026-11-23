@@ -26,6 +26,11 @@ assert_mount "$rendered_json" "$TMP/data/authentik/media" /media 'worker media b
 assert_mount "$rendered_json" "$TMP/data/authentik/certs" /certs 'worker certs bind missing or wrong target' worker
 assert_mount "$rendered_json" "$TMP/data/authentik/custom-templates" /templates 'server templates bind missing or wrong target' server
 assert_mount "$rendered_json" "$TMP/data/authentik/custom-templates" /templates 'worker templates bind missing or wrong target' worker
+assert_mount "$rendered_json" "$TMP/authentik/blueprints" /blueprints/custom 'server blueprint bind missing or wrong target' server
+assert_mount "$rendered_json" "$TMP/authentik/blueprints" /blueprints/custom 'worker blueprint bind missing or wrong target' worker
+assert_service_env "$rendered_json" server WUD_OIDC_CLIENT_ID test-wud-client-id 'server is not receiving the WUD OIDC client id'
+assert_service_env "$rendered_json" worker WUD_OIDC_CLIENT_ID test-wud-client-id 'worker is not receiving the WUD OIDC client id'
+assert_service_env "$rendered_json" worker WUD_PUBLIC_URL https://wud.example.test 'worker is not receiving the WUD public URL'
 assert_mount "$rendered_json" /var/run/docker.sock /var/run/docker.sock 'worker docker socket bind missing' worker
 assert_no_service_mount "$rendered_json" server /var/run/docker.sock /var/run/docker.sock 'server must not mount the docker socket'
 assert_no_service_mount "$rendered_json" postgresql /var/run/docker.sock /var/run/docker.sock 'postgresql must not mount the docker socket'

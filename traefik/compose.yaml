@@ -26,3 +26,5 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${DATA_ROOT}/traefik/acme.json:/acme.json
+    labels:
+      - wud.link.changelog=https://github.com/traefik/traefik/releases

@@ -19,6 +19,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    labels:
+      - wud.link.changelog=https://www.postgresql.org/docs/release/
 
   server:
     container_name: authentik-server-1
@@ -34,11 +36,15 @@ services:
       AUTHENTIK_POSTGRESQL__USER: ${PG_USER}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?PG_PASS is required}
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+      WUD_OIDC_CLIENT_ID: ${WUD_OIDC_CLIENT_ID:?WUD_OIDC_CLIENT_ID is required}
+      WUD_OIDC_CLIENT_SECRET: ${WUD_OIDC_CLIENT_SECRET:?WUD_OIDC_CLIENT_SECRET is required}
+      WUD_PUBLIC_URL: https://wud.${BASE_DOMAIN}
     ports:
       - "127.0.0.1:9000:9000"
     volumes:
       - ${DATA_ROOT}/authentik/media:/media
       - ${DATA_ROOT}/authentik/custom-templates:/templates
+      - ./blueprints:/blueprints/custom:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -48,6 +54,7 @@ services:
       - traefik.http.routers.authentik.entrypoints=websecure
       - traefik.http.routers.authentik.tls.certresolver=le
       - traefik.http.services.authentik.loadbalancer.server.url=http://127.0.0.1:9000
+      - wud.link.changelog=https://github.com/goauthentik/authentik/releases
 
   worker:
     container_name: authentik-worker-1
@@ -64,11 +71,17 @@ services:
       AUTHENTIK_POSTGRESQL__USER: ${PG_USER}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?PG_PASS is required}
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+      WUD_OIDC_CLIENT_ID: ${WUD_OIDC_CLIENT_ID:?WUD_OIDC_CLIENT_ID is required}
+      WUD_OIDC_CLIENT_SECRET: ${WUD_OIDC_CLIENT_SECRET:?WUD_OIDC_CLIENT_SECRET is required}
+      WUD_PUBLIC_URL: https://wud.${BASE_DOMAIN}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DATA_ROOT}/authentik/media:/media
       - ${DATA_ROOT}/authentik/certs:/certs
       - ${DATA_ROOT}/authentik/custom-templates:/templates
+      - ./blueprints:/blueprints/custom:ro
     depends_on:
       postgresql:
         condition: service_healthy
+    labels:
+      - wud.link.changelog=https://github.com/goauthentik/authentik/releases

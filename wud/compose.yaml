@@ -1,0 +1,41 @@
+name: wud
+
+services:
+  wud:
+    container_name: wud
+    image: getwud/wud:9.9.0@sha256:16513343243d3e220bc74f932e3c0774a93cdde5faf9f1b41cb6a9320783aa31
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .secrets
+    environment:
+      TZ: ${TZ}
+      # Native OIDC against Authentik. The provider and application are created
+      # by authentik/blueprints/wud.yaml, so the client credentials live in the
+      # root .env as the single source of truth for both services.
+      WUD_PUBLIC_URL: https://wud.${BASE_DOMAIN}
+      WUD_AUTH_OIDC_AUTHENTIK_CLIENTID: ${WUD_OIDC_CLIENT_ID:?WUD_OIDC_CLIENT_ID is required}
+      WUD_AUTH_OIDC_AUTHENTIK_CLIENTSECRET: ${WUD_OIDC_CLIENT_SECRET:?WUD_OIDC_CLIENT_SECRET is required}
+      WUD_AUTH_OIDC_AUTHENTIK_DISCOVERY: https://id.${BASE_DOMAIN}/application/o/wud/.well-known/openid-configuration
+      WUD_AUTH_OIDC_AUTHENTIK_REDIRECT: "true"
+      WUD_AUTH_OIDC_AUTHENTIK_ADMINGROUP: authentik Admins
+      WUD_AUTH_OIDC_AUTHENTIK_DEFAULTROLE: none
+      # Compose interpolates compose-file values, so WUD's own ${...}
+      # placeholders are written with a doubled dollar sign.
+      WUD_TRIGGER_TELEGRAM_NOTIFY_MESSAGEFORMAT: Markdown
+      WUD_TRIGGER_TELEGRAM_NOTIFY_MODE: batch
+      WUD_TRIGGER_TELEGRAM_NOTIFY_ONDIGEST: "true"
+      WUD_TRIGGER_TELEGRAM_NOTIFY_SIMPLEBODY: '$${name}: $${local} -> $${remote}\n$${changelogUrl || link || documentationUrl || ""}'
+      WUD_TRIGGER_TELEGRAM_NOTIFY_BATCHTITLE: $${containers.length} container updates available
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_ROOT}/wud/store:/store
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wud.rule=Host(`wud.${BASE_DOMAIN}`)
+      - traefik.http.routers.wud.entrypoints=websecure
+      - traefik.http.routers.wud.tls.certresolver=le
+      - traefik.http.services.wud.loadbalancer.server.url=http://127.0.0.1:3000
+      - wud.link.changelog=https://github.com/getwud/wud/releases

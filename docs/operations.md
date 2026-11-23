@@ -130,6 +130,65 @@ The units assume the checkout is `~/stack`; edit `WorkingDirectory` and
 `systemctl --user list-timers stack-update.timer` and
 `journalctl --user -u stack-update.service`.
 
+## Update notifications
+
+`stack update` swaps repo release tags; it never pulls upstream images on its
+own, because every image is pinned as `tag@sha256`. WUD fills that gap by
+watching the registries and reporting new upstream builds.
+
+Enable `wud` and `authentik` in `ENABLED_SERVICES`, then:
+
+```bash
+$EDITOR wud/.secrets    # WUD_TRIGGER_TELEGRAM_NOTIFY_BOTTOKEN / CHATID
+./stack init
+./stack up
+```
+
+`wud/.env` holds the check cadence (`WUD_WATCHER_LOCAL_CRON`, six-hourly by
+default) and `WUD_WATCHER_LOCAL_WATCHDIGESTDEFAULT=true`, which is what catches
+rebuilds of pinned tags such as `latest@sha256`. Notifications are batched into
+one Telegram message per detection cycle, and every service's
+`wud.link.changelog` label supplies a release-notes link.
+
+For a single weekly message, set `WUD_WATCHER_LOCAL_CRON=0 9 * * 1` and
+`WUD_WATCHER_LOCAL_WATCHEVENTS=false`, so only the scheduled check — not a
+container restart — can surface a new image.
+
+Check the Last Check column in the UI, or:
+
+```bash
+./stack logs wud
+curl -s http://127.0.0.1:3000/health
+```
+
+### Sign-in through Authentik
+
+WUD authenticates users with OIDC against Authentik. The client is shared
+through the root `.env`:
+
+```dotenv
+WUD_OIDC_CLIENT_ID=...
+WUD_OIDC_CLIENT_SECRET=...
+```
+
+`./stack init` generates both when empty, so a fresh install needs no manual
+step. `authentik/blueprints/wud.yaml` declares the OAuth2 provider, the `wud`
+application, and a policy binding restricting access to `authentik Admins`.
+Authentik mounts that directory at `/blueprints/custom` and applies it
+automatically; the file is re-applied when it changes or on the periodic scan.
+
+To rotate the secret, change `WUD_OIDC_CLIENT_SECRET` in the root `.env`, touch
+the blueprint so Authentik applies it again, and recreate the services:
+
+```bash
+touch authentik/blueprints/wud.yaml
+./stack up
+```
+
+If sign-in fails, check that the blueprint applied
+(`docker logs authentik-worker-1 --tail=50`) and that the `wud` application
+appears under Authentik's Applications.
+
 ## Backups
 
 Back up these separately:

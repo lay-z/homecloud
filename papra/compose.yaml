@@ -25,3 +25,4 @@ services:
       - traefik.http.routers.papra.entrypoints=websecure
       - traefik.http.routers.papra.tls.certresolver=le
       - traefik.http.services.papra.loadbalancer.server.url=http://127.0.0.1:1221
+      - wud.link.changelog=https://github.com/papra-hq/papra/releases

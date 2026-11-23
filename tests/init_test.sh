@@ -20,6 +20,13 @@ printf '\n# keep me\n' >> "$repo/.env"
 "$repo/stack" init >/dev/null
 
 assert_contains "$repo/.env" "# keep me"
+assert_eq "$(stat -c %a "$repo/.env")" "600"
+assert_eq "$(grep -c '^WUD_OIDC_CLIENT_ID=' "$repo/.env")" "1"
+assert_eq "$(grep -c '^WUD_OIDC_CLIENT_SECRET=' "$repo/.env")" "1"
+grep -Eq '^WUD_OIDC_CLIENT_ID=[0-9a-f]{32}$' "$repo/.env" ||
+  fail "WUD_OIDC_CLIENT_ID was not generated"
+grep -Eq '^WUD_OIDC_CLIENT_SECRET=[0-9a-f]{64}$' "$repo/.env" ||
+  fail "WUD_OIDC_CLIENT_SECRET was not generated"
 assert_file "$TMP/data/traefik/acme.json"
 assert_eq "$(stat -c %a "$TMP/data/traefik/acme.json")" "600"
 assert_file "$TMP/data/jellyfin/config"

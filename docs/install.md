@@ -66,6 +66,14 @@ loginctl enable-linger "$USER"
 The units assume the checkout is `~/stack`; edit `WorkingDirectory` and
 `ExecStart` otherwise. The timer is not enabled by default.
 
+## Container update notifications
+
+Add `wud` and `authentik` to `ENABLED_SERVICES` to receive Telegram alerts when
+an upstream image publishes a new build. `./stack init` generates the shared
+OIDC client in the root `.env`; the Authentik provider and application come
+from `authentik/blueprints/wud.yaml`. See
+[operations.md](operations.md#update-notifications).
+
 ## Hardware transcoding
 
 The base Jellyfin compose does not request `/dev/dri`. On hosts that have it:

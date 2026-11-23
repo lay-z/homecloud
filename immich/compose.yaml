@@ -22,6 +22,7 @@ services:
       - traefik.http.routers.immich.entrypoints=websecure
       - traefik.http.routers.immich.tls.certresolver=le
       - traefik.http.services.immich.loadbalancer.server.url=http://127.0.0.1:2283
+      - wud.link.changelog=https://github.com/immich-app/immich/releases
 
   immich-machine-learning:
     container_name: immich_machine_learning
@@ -31,6 +32,8 @@ services:
       - .env
     volumes:
       - ${DATA_ROOT}/immich/model-cache:/cache
+    labels:
+      - wud.link.changelog=https://github.com/immich-app/immich/releases
 
   redis:
     container_name: immich_redis
@@ -40,6 +43,8 @@ services:
       - ${DATA_ROOT}/immich/redis:/data
     healthcheck:
       test: redis-cli ping || exit 1
+    labels:
+      - wud.link.changelog=https://github.com/valkey-io/valkey/releases
 
   database:
     container_name: immich_postgres
@@ -53,3 +58,5 @@ services:
     volumes:
       - ${DATA_ROOT}/immich/postgres:/var/lib/postgresql/data
     shm_size: 128mb
+    labels:
+      - wud.link.changelog=https://github.com/immich-app/postgres/releases

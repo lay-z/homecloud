@@ -19,6 +19,8 @@ TZ=UTC
 PUID=1000
 PGID=1000
 ENABLED_SERVICES=jellyfin
+WUD_OIDC_CLIENT_ID=test-wud-client-id
+WUD_OIDC_CLIENT_SECRET=test-wud-client-secret
 EOF
 }
 

@@ -127,6 +127,37 @@ generate_secret() {
   esac
 }
 
+ensure_env_value() {
+  local key="$1"
+  local generator="$2"
+  local value tmp
+
+  if [[ -n "$(read_env_value "$key" "")" ]]; then
+    return 0
+  fi
+
+  value="$("$generator")"
+  tmp="$(mktemp "$ROOT/.env.XXXXXX")"
+
+  awk -v key="$key" -v value="$value" '
+    $0 == key "=" { print key "=" value; done = 1; next }
+    { print }
+    END { if (!done) print key "=" value }
+  ' "$ROOT/.env" > "$tmp"
+
+  chmod 600 "$tmp"
+  mv "$tmp" "$ROOT/.env"
+  info "generated $key in .env"
+}
+
+generate_client_id() {
+  openssl rand -hex 16
+}
+
+generate_client_secret() {
+  openssl rand -hex 32
+}
+
 generate_service_secrets() {
   local dir="$1"
   local example="$dir/.secrets.example"
@@ -164,6 +195,9 @@ cmd_init() {
     created_env=1
   fi
 
+  # The root .env now holds the shared WUD OIDC client secret.
+  chmod 600 "$ROOT/.env"
+
   if (( ! created_env )); then
     load_env
   fi
@@ -191,6 +225,9 @@ cmd_init() {
 
   mkdir -p "$DATA_ROOT/traefik"
 
+  ensure_env_value WUD_OIDC_CLIENT_ID generate_client_id
+  ensure_env_value WUD_OIDC_CLIENT_SECRET generate_client_secret
+
   if [[ ! -f "$DATA_ROOT/traefik/acme.json" ]]; then
     : > "$DATA_ROOT/traefik/acme.json"
     chmod 600 "$DATA_ROOT/traefik/acme.json"
@@ -216,6 +253,9 @@ cmd_init() {
         ;;
       checkmate)
         mkdir -p "$DATA_ROOT/checkmate/mongo-data" "$DATA_ROOT/checkmate/mongo-configdb"
+        ;;
+      wud)
+        mkdir -p "$DATA_ROOT/wud/store"
         ;;
       *)
         mkdir -p "$DATA_ROOT/$svc"
@@ -245,6 +285,13 @@ cmd_check() {
   local services svc dir
   services="$(enabled_services)"
   [[ -n "$services" ]] || die "ENABLED_SERVICES is empty"
+
+  if grep -qxE 'wud|authentik' <<< "$services"; then
+    [[ -n "${WUD_OIDC_CLIENT_ID:-}" ]] ||
+      die "WUD_OIDC_CLIENT_ID is required when wud or authentik is enabled (run ./stack init)"
+    [[ -n "${WUD_OIDC_CLIENT_SECRET:-}" ]] ||
+      die "WUD_OIDC_CLIENT_SECRET is required when wud or authentik is enabled (run ./stack init)"
+  fi
 
   while IFS= read -r svc; do
     [[ -n "$svc" ]] || continue

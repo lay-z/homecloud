@@ -73,6 +73,7 @@ Persistent data lives under `${DATA_ROOT}/<service>`, never inside the repo.
 | Authentik | `id.<base>` | `127.0.0.1:9000` | converted |
 | Papra | `docs.<base>` | `127.0.0.1:1221` | converted |
 | Checkmate | `status.<base>` / `info.status.<base>` | `127.0.0.1:52345` | converted |
+| WUD | `wud.<base>` | `127.0.0.1:3000` | monitoring |
 
 All public services are converted to per-service directories. Traefik owns ports
 80 and 443. On the reference server nginx is stopped; the old stacks, old named
@@ -102,6 +103,48 @@ delay. Disable it with `systemctl --user disable --now stack-update.timer`.
 Rollback is `git checkout <previous-tag> && ./stack up`. Back up
 `${DATA_ROOT}`, the root `.env`, and all `*/.env` / `*/.secrets` files before
 updating. Database migrations may not be reversible.
+
+## Update notifications
+
+`stack update` only moves the repo between release tags. Because every image is
+pinned as `tag@sha256`, a plain `docker compose pull` downloads nothing new.
+
+`wud` reports what upstream has published instead. Enable it by adding `wud`
+and `authentik` to `ENABLED_SERVICES`, setting the Telegram values in
+`wud/.secrets`, then running `./stack init` and `./stack up`:
+
+```dotenv
+ENABLED_SERVICES=jellyfin,immich,tandoor,authentik,papra,checkmate,wud
+```
+
+```bash
+$EDITOR wud/.secrets   # bot token from @BotFather, chat id from @userinfobot
+./stack init           # creates ${DATA_ROOT}/wud/store
+./stack up
+```
+
+WUD checks registries every six hours (`WUD_WATCHER_LOCAL_CRON` in
+`wud/.env`) and sends one batched Telegram message per detection cycle.
+Digest watching is on, so same-tag rebuilds such as `latest@sha256` and
+`16-alpine` are reported too. Each service carries a `wud.link.changelog`
+label, so every line in the message links to that project's release notes.
+For one message a week instead, set the cron to `0 9 * * 1` and add
+`WUD_WATCHER_LOCAL_WATCHEVENTS=false`.
+
+### WUD sign-in through Authentik
+
+WUD uses native OIDC, not Traefik forward auth. The client credentials live
+once in the root `.env` (`WUD_OIDC_CLIENT_ID`, `WUD_OIDC_CLIENT_SECRET`) and
+`./stack init` generates them if they are empty. The Authentik side is declared
+in `authentik/blueprints/wud.yaml`, which Authentik discovers under
+`/blueprints/custom` and applies on its own; the OAuth2 provider, the
+application, and the policy binding are never clicked into the admin UI.
+
+Only members of `authentik Admins` can sign in, and
+`WUD_AUTH_OIDC_AUTHENTIK_ADMINGROUP` maps that group to WUD's admin role.
+Rotate the client secret by changing it in the root `.env`, touching
+`authentik/blueprints/wud.yaml` so Authentik applies it again, and running
+`./stack up`.
 
 ## Data safety
 

@@ -11,6 +11,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - ${DATA_ROOT}/tandoor/postgresql:/var/lib/postgresql/data
+    labels:
+      - wud.link.changelog=https://www.postgresql.org/docs/release/
 
   web_recipes:
     container_name: tandoor-web_recipes-1
@@ -35,3 +37,4 @@ services:
       - traefik.http.routers.tandoor.entrypoints=websecure
       - traefik.http.routers.tandoor.tls.certresolver=le
       - traefik.http.services.tandoor.loadbalancer.server.url=http://127.0.0.1:8979
+      - wud.link.changelog=https://github.com/vabene1111/recipes/releases

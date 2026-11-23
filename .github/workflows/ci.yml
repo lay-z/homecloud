@@ -36,6 +36,7 @@ jobs:
           ./tests/render_authentik_test.sh
           ./tests/render_papra_test.sh
           ./tests/render_checkmate_test.sh
+          ./tests/render_wud_test.sh
 
       - name: Data safety tests
         run: |
