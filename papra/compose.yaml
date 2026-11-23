@@ -3,7 +3,7 @@ name: papra
 services:
   papra:
     container_name: papra
-    image: ghcr.io/papra-hq/papra:latest@sha256:9b3ddb66c63caf9d2616a2cb47689d39af4efd4ed19bffdf1943a8a262719c35
+    image: ghcr.io/papra-hq/papra:latest@sha256:d1f596a35332ad04d8a69d88a5e19bc82acd47f2bc2fe687dd2145b1ef5a8b19
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     env_file:

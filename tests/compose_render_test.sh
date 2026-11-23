@@ -25,8 +25,8 @@ grep -Fq 'entrypoints.websecure.address=:443' <<< "$traefik" \
   || { printf 'FAIL: Traefik websecure entrypoint missing\n' >&2; exit 1; }
 grep -Fq 'providers.docker.exposedByDefault=false' <<< "$traefik" \
   || { printf 'FAIL: Traefik exposedByDefault missing\n' >&2; exit 1; }
-grep -Fq 'image: traefik:v3.6' <<< "$traefik" \
-  || { printf 'FAIL: Traefik must be v3.6+ for Docker Engine 29 API compatibility\n' >&2; exit 1; }
+grep -Fq 'image: traefik:v3.7.19' <<< "$traefik" \
+  || { printf 'FAIL: Traefik must be v3.7.19+ for Docker Engine 29 API compatibility\n' >&2; exit 1; }
 grep -Fq '/acme.json' <<< "$traefik" \
   || { printf 'FAIL: Traefik acme.json mount missing\n' >&2; exit 1; }
 

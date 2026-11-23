@@ -3,7 +3,7 @@ name: tandoor
 services:
   db_recipes:
     container_name: tandoor-db_recipes-1
-    image: postgres:16-alpine@sha256:23e88eb049fd5d54894d70100df61d38a49ed97909263f79d4ff4c30a5d5fca2
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     restart: unless-stopped
     env_file:
       - .env
@@ -16,7 +16,7 @@ services:
 
   web_recipes:
     container_name: tandoor-web_recipes-1
-    image: vabene1111/recipes:latest@sha256:f6c58afdea7a721d079ebd6ee5483f2c9da77dd1e709e16d60a82c218e80a451
+    image: vabene1111/recipes:latest@sha256:6c467bf484044a0305ff39bed5badb48b58bb963d4276fc248e101921151895b
     restart: unless-stopped
     env_file:
       - .env
