@@ -92,13 +92,23 @@ compose() {
 
 check_data_safety() {
   local service="$1"
-  local rendered
+  local rendered source
 
   rendered="$(compose "$service" config --format json)"
 
   if grep -Eq '"type"[[:space:]]*:[[:space:]]*"volume"' <<< "$rendered"; then
     die "$service uses a named or anonymous volume; use a bind mount under DATA_ROOT"
   fi
+
+  # Docker creates a missing bind source as root. Services that do not run as
+  # root then fail at runtime, long after a green healthcheck. Catch it here.
+  while IFS= read -r source; do
+    [[ -n "$source" ]] || continue
+    [[ "$source" == "$DATA_ROOT"/* ]] || continue
+    [[ -e "$source" ]] ||
+      die "$service: bind mount source is missing: $source (run ./stack init)"
+  done <<< "$(grep -o '"source":[[:space:]]*"[^"]*"' <<< "$rendered" |
+    sed 's/^"source":[[:space:]]*"//; s/"$//' || true)"
 }
 
 enabled_services() {
@@ -453,6 +463,10 @@ cmd_doctor() {
   done
 }
 
+cmd_migrate() {
+  STACK_ROOT="$ROOT" "$ROOT/tools/migrate.sh" "$@"
+}
+
 cmd_help() {
   cat <<'EOF'
 Usage: ./stack <command>
@@ -466,6 +480,7 @@ Commands:
   logs <service>       Follow logs for a service
   restart <service>    Restart a service
   update [--version v] Check out a release tag and redeploy
+  migrate <command>    Run staged data migrations (list, plan, run, validate, status)
   doctor               Print redacted diagnostics
 EOF
 }
@@ -482,6 +497,7 @@ main() {
     logs) cmd_logs "$@";;
     restart) cmd_restart "$@";;
     update) cmd_update "$@";;
+    migrate) cmd_migrate "$@";;
     doctor) cmd_doctor "$@";;
     init) cmd_init "$@";;
     help|-h|--help) cmd_help;;

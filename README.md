@@ -53,13 +53,14 @@ Persistent data lives under `${DATA_ROOT}/<service>`, never inside the repo.
 
 ```text
 ./stack init                 Create env files and required directories
-./stack check                Validate env files and compose configuration
+./stack check                Validate env files, compose configuration, and bind mounts
 ./stack up                   Start Traefik and enabled services
 ./stack down                 Stop services and Traefik (keeps data)
 ./stack status               Show container status
 ./stack logs <service>       Follow logs
 ./stack restart <service>    Restart a service
 ./stack update [--version v] Check out a release tag and redeploy
+./stack migrate <command>    Staged data migrations: list, plan, run, validate, status
 ./stack doctor               Print redacted diagnostics
 ```
 

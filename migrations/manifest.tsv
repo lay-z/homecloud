@@ -1,0 +1,29 @@
+# Migration manifest. Order is execution order; keep each service contiguous.
+#
+# Fields, tab separated:
+#   id  service  release  kind  needs_stop  backup  min_free_mb  script  description
+#
+# kind:       preflight (read only, service up)
+#             window    (service stopped, data or layout change)
+#             post      (service up, verification or maintenance)
+#             data      (service stopped, database engine change)
+# needs_stop: yes|no. tools/migrate.sh stops and restarts the service around it.
+# backup:     yes|no. Informational; scripts decide which paths to archive.
+# release:    target application or database version this step belongs to.
+authentik-2025.12-preflight	authentik	2025.12.6	preflight	no	no	1024	authentik/preflight.sh	Check group-name uniqueness and the running version
+authentik-2025.12-storage	authentik	2025.12.6	window	yes	yes	512	authentik/storage-layout.sh	Move media/ to data/media for the new /data mount
+authentik-2025.12-verify	authentik	2025.12.6	post	no	no	0	authentik/verify.sh	Check health, version, and migration logs
+authentik-2026.2-preflight	authentik	2026.2.7	preflight	no	no	1024	authentik/preflight.sh	Check the 2025.12 step is running
+authentik-2026.2-verify	authentik	2026.2.7	post	no	no	0	authentik/verify.sh	Check health, version, and migration logs
+authentik-2026.5-preflight	authentik	2026.5.8	preflight	no	no	1024	authentik/preflight.sh	Check the 2026.2 step is running
+authentik-2026.5-verify	authentik	2026.5.8	post	no	no	0	authentik/verify.sh	Check health, version, and migration logs
+authentik-2026.8-preflight	authentik	2026.8.6	preflight	no	no	1024	authentik/preflight.sh	Check the 2026.5 step and trusted proxy CIDRs
+authentik-2026.8-verify	authentik	2026.8.6	post	no	no	0	authentik/verify.sh	Check health, version, and migration logs
+authentik-2026.8-analyze	authentik	2026.8.6	post	no	no	0	authentik/analyze.sh	Refresh PostgreSQL planner statistics
+jellyfin-12-preflight	jellyfin	12.4	preflight	no	no	2048	jellyfin/12-preflight.sh	Remove third-party plugins and check usernames
+jellyfin-12-migrate	jellyfin	12.4	window	yes	yes	2048	jellyfin/12-migrate.sh	Back up config and run the offline database migration
+jellyfin-12-verify	jellyfin	12.4	post	no	no	0	jellyfin/12-verify.sh	Check health and migration logs
+checkmate-mongo-8.3-preflight	checkmate	8.3	preflight	no	no	1024	checkmate/mongo-preflight.sh	Check FCV 8.0 and backup capacity
+checkmate-mongo-8.3	checkmate	8.3	data	yes	yes	1024	checkmate/mongo-upgrade.sh	Upgrade MongoDB binaries and set FCV 8.3
+checkmate-mongo-9.0-preflight	checkmate	9.0	preflight	no	no	1024	checkmate/mongo-preflight.sh	Check FCV 8.3 and backup capacity
+checkmate-mongo-9.0	checkmate	9.0	data	yes	yes	1024	checkmate/mongo-upgrade.sh	Upgrade MongoDB binaries and set FCV 9.0

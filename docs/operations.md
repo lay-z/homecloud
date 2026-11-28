@@ -112,6 +112,19 @@ git checkout <previous-tag>
 Back up `${DATA_ROOT}`, the root `.env`, and all `*/.env` / `*/.secrets` files
 first. Database migrations may not be reversible.
 
+Application and database majors that need a data migration are staged through
+`./stack migrate`; see [upgrades.md](upgrades.md) for the ladder and the
+per-service runbooks.
+
+```bash
+./stack migrate list
+./stack migrate plan
+./stack migrate run <id> --yes
+```
+
+Set `BACKUP_ROOT` in `.env` before running a migration so archives land on the
+large disk rather than the root filesystem.
+
 ### Optional update timer
 
 The units in `systemd/` run `./stack update` daily at 04:00 with up to an hour

@@ -40,6 +40,15 @@ if DOCKER_VOLUME_JSON=1 "$repo/stack" check >/dev/null 2>&1; then
   fail "check accepted a named volume"
 fi
 
+if DOCKER_BIND_SOURCE="$TMP/data/jellyfin/missing" "$repo/stack" check >/dev/null 2>"$TMP/bind.err"; then
+  fail "check accepted a missing bind mount source"
+fi
+assert_contains "$TMP/bind.err" "bind mount source is missing"
+
+mkdir -p "$TMP/data/jellyfin/present"
+DOCKER_BIND_SOURCE="$TMP/data/jellyfin/present" "$repo/stack" check >/dev/null
+DOCKER_BIND_SOURCE="/nonexistent/outside-data-root" "$repo/stack" check >/dev/null
+
 : > "$DOCKER_LOG"
 "$repo/stack" check >/dev/null
 

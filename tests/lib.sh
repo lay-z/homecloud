@@ -15,6 +15,9 @@ printf '%s\n' "$*" >> "${DOCKER_LOG:?}"
 if [[ "${DOCKER_VOLUME_JSON:-0}" == "1" && "$*" == *"config --format json"* ]]; then
   printf '{"services":{"x":{"volumes":[{"type":"volume"}]}}}\n'
 fi
+if [[ -n "${DOCKER_BIND_SOURCE:-}" && "$*" == *"config --format json"* ]]; then
+  printf '{"services":{"x":{"volumes":[{"type":"bind","source":"%s","target":"/x","bind":{}}]}}}\n' "$DOCKER_BIND_SOURCE"
+fi
 if [[ "${DOCKER_PS_FAIL:-0}" == "1" && "$*" == *"ps -q"* ]]; then
   exit 1
 fi
