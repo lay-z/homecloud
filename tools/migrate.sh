@@ -330,12 +330,8 @@ cmd_run() {
     set -euo pipefail
     export STACK_ROOT="$ROOT"
     export MIGRATIONS_DIR MIGRATION_ID="$id" SERVICE RELEASE KIND
-    export BACKUP_DIR="$backup_dir" LOG_FILE="$log"
+    export BACKUP_DIR="$backup_dir" LOG_FILE="$log" BACKUP_ROOT
     export DOCKER_BIN
-    if [[ -f "$MIGRATIONS_DIR/lib.sh" ]]; then
-      # shellcheck disable=SC1091
-      . "$MIGRATIONS_DIR/lib.sh"
-    fi
     cd "$ROOT"
     "$script_path"
   ) 2>&1 | tee -a "$log"

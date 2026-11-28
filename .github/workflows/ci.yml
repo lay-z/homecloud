@@ -14,7 +14,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Shellcheck
-        run: shellcheck stack tests/*.sh tools/*.sh
+        run: shellcheck -x stack tests/*.sh tools/*.sh migrations/lib.sh migrations/*/*.sh
+
+      - name: Migration manifest
+        run: ./stack migrate validate
 
       - name: Stack tests
         run: |
@@ -24,6 +27,7 @@ jobs:
           ./tests/update_test.sh
           ./tests/init_services_test.sh
           ./tests/migrate_volume_test.sh
+          ./tests/migrate_test.sh
           ./tests/systemd_units_test.sh
 
       - name: Compose render tests

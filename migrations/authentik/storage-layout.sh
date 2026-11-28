@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=SCRIPTDIR/../lib.sh
+. "$MIGRATIONS_DIR/lib.sh"
+
 src="$DATA_ROOT/authentik/media"
 dst="$DATA_ROOT/authentik/data/media"
 

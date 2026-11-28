@@ -16,15 +16,24 @@ sed -i "s|^ENABLED_SERVICES=.*|ENABLED_SERVICES=jellyfin|" "$repo/.env"
 
 manifest="$TMP/migrations"
 mkdir -p "$manifest/fake"
+cp "$ROOT/migrations/lib.sh" "$manifest/lib.sh"
 cat > "$manifest/fake/preflight.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=../lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
+info "preflight ran with lib.sh loaded"
 printf 'preflight\n' >> "$RECORD"
 SH
 cat > "$manifest/fake/window.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=../lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 grep -Fq ' stop' "$DOCKER_LOG" || { printf 'service was not stopped\n' >&2; exit 1; }
+mkdir -p "$DATA_ROOT/fixture"
+printf 'fixture\n' > "$DATA_ROOT/fixture/file.txt"
+backup_path "$DATA_ROOT/fixture/file.txt" fixture
 printf 'window\n' >> "$RECORD"
 SH
 cat > "$manifest/fake/fail.sh" <<'SH'
@@ -74,6 +83,12 @@ assert_file "$TMP/data/.migrations/fake-window"
 assert_contains "$RECORD" "window"
 assert_contains "$DOCKER_LOG" " stop"
 assert_contains "$DOCKER_LOG" " up -d"
+
+bakdir="$(find "$TMP/backups" -mindepth 1 -maxdepth 1 -type d -name '*-fake-window' | head -n1)"
+assert_file "$bakdir/fixture.tar.gz"
+assert_contains "$bakdir/SHA256SUMS" "fixture.tar.gz"
+[[ "$(tar -xzOf "$bakdir/fixture.tar.gz" file.txt)" == "fixture" ]] ||
+  fail "backup_path produced the wrong archive contents"
 
 if "$repo/stack" migrate run fake-fail --yes >/dev/null 2>&1; then
   fail "migrate recorded a failed migration"

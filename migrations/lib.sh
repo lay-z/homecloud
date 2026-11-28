@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Shared helpers for migrations/*.  Sourced by tools/migrate.sh before each
-# migration script runs.  Do not execute directly.
+# Shared helpers for migrations/*.  Sourced by each migration script; see
+# migrations/README.md.  Do not execute directly.
 
 die() {
   printf 'migration: %s\n' "$*" >&2

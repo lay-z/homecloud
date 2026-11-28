@@ -100,6 +100,27 @@ git push
 If a script fails, the service is restarted on whatever is currently pinned,
 the journal entry is **not** written, and the exit status is non-zero.
 
+`./stack update` checks out the tag **and** restarts the stack, so after the
+release half the new image is already serving. Every preflight therefore checks
+the data state, not the image version, and may run before or after the deploy.
+Preflights are skipped automatically once their id is journalled, so a re-run is
+still a no-op.
+
+The exception is a step whose data work must happen **before** the new image
+starts. Jellyfin 12 is the only one today: check the tag out without deploying,
+run the step, and let the runner start the new image itself.
+
+```bash
+git fetch --tags
+git checkout v0.5.0        # no ./stack up yet
+./stack migrate run jellyfin-12-preflight --yes
+./stack migrate run jellyfin-12-migrate --yes   # stops 10.11, migrates offline, starts 12
+./stack migrate run jellyfin-12-verify --yes
+```
+
+Do not use `./stack update` for that step; it would start Jellyfin 12 and run
+the online migration the offline step exists to avoid.
+
 ### The manifest
 
 `migrations/manifest.tsv` is the ordered list. Columns:
@@ -183,10 +204,23 @@ Commands, once each release is deployed:
 ./stack migrate run authentik-2026.8-analyze --yes
 ```
 
-The 2025.12 release PR must change the storage mount from
-`${DATA_ROOT}/authentik/media:/media` to `${DATA_ROOT}/authentik/data:/data`.
-The storage migration refuses to run until that change is in the checked-out
-compose file.
+The 2025.12 release PR must make three changes together:
+
+1. Change the storage mount from `${DATA_ROOT}/authentik/media:/media` to
+   `${DATA_ROOT}/authentik/data:/data`, on both the `server` and the `worker`
+   service in `authentik/compose.yaml`.
+2. Add `$DATA_ROOT/authentik/data` to the directories `cmd_init` creates in
+   `stack`. Without it, a fresh install gets no `data/` directory, Docker
+   creates it as `root:root`, and Authentik (uid 1000 in the image) cannot
+   write to it. `./stack check` now fails on a missing bind source under
+   `DATA_ROOT`, so shipping one change without the other blocks the deploy
+   instead of failing later at upload time.
+3. Keep the mount and `init` changes in the same release tag: `./stack update`
+   checks out and deploys in one step, and refuses a dirty tree, so there is no
+   way to patch the host between releases.
+
+The storage migration refuses to run until the mount change is in the
+checked-out compose file.
 
 ## Jellyfin 12
 
@@ -203,17 +237,23 @@ Current preflight result on the reference server:
 
 ```bash
 mkdir -p "$DATA_ROOT/jellyfin/plugins-pre-12"
-mv "$DATA_ROOT/jellyfin/config/plugins/"*/ "$DATA_ROOT/jellyfin/plugins-pre-12/"
+find "$DATA_ROOT/jellyfin/config/plugins" -mindepth 1 -maxdepth 1 -type d \
+  ! -name configurations -exec mv {} "$DATA_ROOT/jellyfin/plugins-pre-12/" +
 
 ./stack migrate run jellyfin-12-preflight --yes
 ./stack migrate run jellyfin-12-migrate --yes
 ./stack migrate run jellyfin-12-verify --yes
 ```
 
+Check the tag out before the first command and do not run `./stack update`
+until the ladder is finished; see [Structured migration process](#structured-migration-process).
+Keep `configurations/` in place (the preflight ignores it); only the plugin
+directories have to move.
+
 The migration step archives the whole config directory, then runs
-`jellyfin --mode MigrateSystem` without serving requests. After verification,
-run a full library scan; Jellyfin 12 requires it to rebuild alternative
-versions.
+`jellyfin --mode MigrateSystem` without serving requests. The runner then starts
+Jellyfin 12.4. After verification, run a full library scan; Jellyfin 12 requires
+it to rebuild alternative versions.
 
 ## MongoDB / Checkmate
 
@@ -294,5 +334,8 @@ For every step:
 - [ ] the service reports healthy in `./stack status`
 - [ ] the application logs contain no migration or database errors
 - [ ] the public route returns HTTP 200
+- [ ] the application can still write its data, not just serve it: for Authentik
+      2025.12 upload a file so `/data` is exercised, for Jellyfin check a new
+      library item, for Immich an upload
 - [ ] the backup directory contains a verified archive and `SHA256SUMS`
 - [ ] the step is left to run for an observation period before the next one

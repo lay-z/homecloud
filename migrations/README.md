@@ -7,13 +7,24 @@ entry point is `./stack migrate`; the full upgrade plan is in
 ## Files
 
 - `manifest.tsv`: the ordered list of migrations. See the column header.
-- `lib.sh`: helpers sourced before a script runs.
+- `lib.sh`: helpers that each migration script sources.
 - `<service>/<step>.sh`: executable migration scripts.
 
 ## Script contract
 
-A migration script runs with `bash -euo pipefail` from the repo root and can
-rely on these exported variables:
+A migration script runs as its own process, with `bash -euo pipefail`, from the
+repo root. `lib.sh` is not inherited across that boundary, so every script
+sources it itself:
+
+```bash
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=SCRIPTDIR/../lib.sh
+. "$MIGRATIONS_DIR/lib.sh"
+```
+
+That also makes a step runnable by hand for a read-only inspection.
+
+The runner exports these variables:
 
 | Variable | Meaning |
 | --- | --- |
@@ -24,11 +35,13 @@ rely on these exported variables:
 | `RELEASE` | target version from the manifest |
 | `KIND` | `preflight`, `window`, `post`, or `data` |
 | `BACKUP_DIR` | per-run backup directory |
+| `BACKUP_ROOT` | root that holds the per-run backup directories |
 | `LOG_FILE` | per-run log file |
 
 `lib.sh` provides `die`, `info`, `warn`, `service_env`, `compose_svc`,
 `running_image_tag`, `assert_compose_image`, `compose_config_has`, `wait_http`,
-`wait_healthy`, `container_status`, `backup_path`, and `require_tool`.
+`wait_healthy`, `container_status`, `backup_path`, and `require_tool`. Do not
+rely on the runner sourcing it for you.
 
 Rules:
 

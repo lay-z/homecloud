@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=SCRIPTDIR/../lib.sh
+. "$MIGRATIONS_DIR/lib.sh"
+
 db_user="$(service_env PG_USER authentik)"
 db_name="$(service_env PG_DB authentik)"
 

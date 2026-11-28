@@ -37,7 +37,9 @@ release tag; `stack update` deploys tags, not branches, and refuses a dirty tree
 
 Persistent data lives under `${DATA_ROOT}/<service>`, outside the repo. All
 persistent paths are bind mounts; do not introduce named or anonymous volumes.
-`stack check` rejects `type: volume`, and `stack down -v` is rejected.
+`stack check` rejects `type: volume`, and rejects a bind source under
+`DATA_ROOT` that does not exist (Docker would create it as root), and
+`stack down -v` is rejected.
 
 ## Current phase
 

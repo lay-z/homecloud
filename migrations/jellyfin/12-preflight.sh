@@ -1,18 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=SCRIPTDIR/../lib.sh
+. "$MIGRATIONS_DIR/lib.sh"
+
 current="$(running_image_tag jellyfin || true)"
-[[ -n "$current" ]] || die "could not read the running Jellyfin version"
+
+if [[ -z "$current" ]]; then
+  warn "jellyfin is not running; reading the compose pin instead"
+  current="$(compose_svc config --images | grep -F 'jellyfin/jellyfin:' | head -n1 || true)"
+  current="${current%%@*}"
+  current="${current##*:}"
+fi
+
+[[ -n "$current" ]] || die "could not determine the Jellyfin version"
 info "jellyfin $current -> $RELEASE"
 
+# This step checks the data state, not the image version: 12 is normally
+# already serving when the data half runs. The pin itself is asserted by
+# 12-migrate.sh right before the offline migration.
 if [[ "$current" == 12.* ]]; then
-  info "already running $current"
-  exit 0
-fi
-[[ "$current" == 10.11.* ]] ||
+  info "already running $current; checking the data state the migration needs"
+elif [[ "$current" == 10.11.* || "$current" == 10.10.7* ]]; then
+  info "direct upgrade from $current is supported"
+else
   die "Jellyfin 12 supports direct upgrades from 10.10.7 and 10.11.x only (running $current)"
-
-assert_compose_image 'jellyfin/jellyfin:12.'
+fi
 
 plugins_dir="$DATA_ROOT/jellyfin/config/plugins"
 mapfile -t plugins < <(
@@ -36,7 +50,7 @@ Move the plugin directories aside, then rerun this preflight:
 Reinstall plugin versions built for 12.0 after the upgrade. Set
 JELLYFIN_ALLOW_PLUGINS=1 only if you accept the risk of a failed migration.
 EOF
-    die "remove third-party plugins before upgrading to Jellyfin 12"
+    die "remove third-party plugins before running the Jellyfin 12 migration"
   fi
 fi
 
@@ -57,5 +71,5 @@ else
   warn "$db not found; treating this as a fresh install"
 fi
 
-info "config size: $(du -sh "$DATA_ROOT/jellyfin/config" | cut -f1)"
+info "config size: $(du -sh "$DATA_ROOT/jellyfin/config" 2>/dev/null | cut -f1)"
 info "preflight passed"

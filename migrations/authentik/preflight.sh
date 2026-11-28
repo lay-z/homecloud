@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# shellcheck source=SCRIPTDIR/../lib.sh
+. "$MIGRATIONS_DIR/lib.sh"
+
 container=authentik-server-1
 current="$(running_image_tag "$container" || true)"
 
 if [[ -z "$current" ]]; then
   warn "$container is not running; reading the compose pin instead"
-  current="$(compose_svc config --images | grep -F 'goauthentik/server:' | head -n1)"
+  current="$(compose_svc config --images | grep -F 'goauthentik/server:' | head -n1 || true)"
   current="${current%%@*}"
   current="${current##*:}"
 fi
@@ -14,15 +18,6 @@ fi
 [[ -n "$current" ]] || die "could not determine the authentik version"
 
 info "authentik $current -> $RELEASE"
-
-if [[ "$current" == "$RELEASE" ]]; then
-  info "already running $RELEASE"
-  exit 0
-fi
-if [[ "$(printf '%s\n%s\n' "$current" "$RELEASE" | sort -V | tail -n1)" == "$current" ]]; then
-  info "already at $current, which is newer than $RELEASE; nothing to do"
-  exit 0
-fi
 
 case "$RELEASE" in
   2025.12.*) previous=2025.10 ;;
@@ -32,10 +27,25 @@ case "$RELEASE" in
   *) die "no known upgrade sequence for $RELEASE" ;;
 esac
 
-[[ "$current" == "$previous".* ]] ||
-  die "authentik upgrades are sequential: run the $previous step before $RELEASE (currently $current)"
+# This step checks the data state, not the image version: ./stack update
+# deploys the new image before the data half runs, so $RELEASE is normally
+# already serving when we get here. Re-running the checks against it is
+# harmless and keeps the duplicate-name guard alive.
+current_minor="${current%.*}"
+release_minor="${RELEASE%.*}"
 
-info "sequential step $previous -> $RELEASE confirmed"
+if [[ "$current_minor" == "$release_minor" ]]; then
+  info "$current already serves $RELEASE; checking the state the migration needs"
+elif [[ "$current_minor" == "$previous" ]]; then
+  info "sequential step $previous -> $RELEASE confirmed"
+else
+  newest="$(printf '%s\n%s\n' "$current_minor" "$release_minor" | sort -V | tail -n1)"
+  if [[ "$newest" == "$current_minor" ]]; then
+    info "already at $current, which is newer than $RELEASE; nothing to do"
+    exit 0
+  fi
+  die "authentik upgrades are sequential: run the $previous step before $RELEASE (currently $current)"
+fi
 
 [[ -n "$(service_env AUTHENTIK_SECRET_KEY)" ]] ||
   die "AUTHENTIK_SECRET_KEY is empty in authentik/.secrets"
@@ -53,6 +63,7 @@ if [[ -n "$duplicates" ]]; then
   printf 'duplicate group names:\n%s\n' "$duplicates" >&2
   die "2025.12 enforces group-name uniqueness at the database level; rename these groups before upgrading"
 fi
+info "no duplicate group names"
 
 authentik_root="$DATA_ROOT/authentik"
 if [[ -d "$authentik_root/data/media" ]]; then
