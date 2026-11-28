@@ -17,15 +17,12 @@ fi
 [[ -n "$current" ]] || die "could not determine the Jellyfin version"
 info "jellyfin $current -> $RELEASE"
 
-# This step checks the data state, not the image version: 12 is normally
-# already serving when the data half runs. The pin itself is asserted by
-# 12-migrate.sh right before the offline migration.
-if [[ "$current" == 12.* ]]; then
-  info "already running $current; checking the data state the migration needs"
-elif [[ "$current" == 10.11.* || "$current" == 10.10.7* ]]; then
+# Run this check before deploying 12: the supported source version, plugins,
+# and usernames must be verified before the target image can touch the data.
+if [[ "$current" == 10.11.* || "$current" == 10.10.7* ]]; then
   info "direct upgrade from $current is supported"
 else
-  die "Jellyfin 12 supports direct upgrades from 10.10.7 and 10.11.x only (running $current)"
+  die "run this preflight while Jellyfin 10.10.7 or 10.11.x is still serving, before deploying 12 (running $current)"
 fi
 
 plugins_dir="$DATA_ROOT/jellyfin/config/plugins"

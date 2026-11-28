@@ -39,9 +39,11 @@ The runner exports these variables:
 | `LOG_FILE` | per-run log file |
 
 `lib.sh` provides `die`, `info`, `warn`, `service_env`, `compose_svc`,
-`running_image_tag`, `assert_compose_image`, `compose_config_has`, `wait_http`,
-`wait_healthy`, `container_status`, `backup_path`, and `require_tool`. Do not
-rely on the runner sourcing it for you.
+`running_image_tag`, `assert_compose_image`, `compose_config_has`,
+`compose_service_config_has`, `cidrs_include_ips`, `wait_http`, `wait_healthy`,
+`container_status`, `backup_path`, and `require_tool`. Do not rely on the runner
+sourcing it for you. `cidrs_include_ips` uses Python's standard-library
+`ipaddress` module.
 
 Rules:
 
@@ -55,7 +57,8 @@ Rules:
 4. **No image edits.** Pins belong in compose files and pull requests. Scripts
    are allowed to check that the pin is already correct.
 5. **Sequential.** Never skip an application or database major. Encode the
-   expected previous version in a preflight script.
+   expected previous version in a preflight script. The runner also requires
+   earlier rows for the same service to be journalled before a later id runs.
 6. **Small.** One migration does one thing. A ladder step gets its own id.
 
 ## Adding a migration

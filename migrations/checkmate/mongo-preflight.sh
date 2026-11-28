@@ -40,14 +40,11 @@ esac
 [[ "$fcv" == "$expected_fcv" ]] ||
   die "MongoDB upgrades are sequential: FCV must be $expected_fcv before $RELEASE (currently $fcv)"
 
-# This step checks the data state, not the image version. After ./stack update
-# the binaries are already on $RELEASE while the FCV is still $expected_fcv;
-# mongo-upgrade.sh asserts the compose pin itself, right before the FCV change.
+# Preflight before deploying the new binaries. The runner's following data step
+# asserts the compose pin, starts those binaries, takes the dump, then raises FCV.
 binary_minor="${mongo_version%.*}"
-if [[ "$binary_minor" == "$RELEASE" ]]; then
-  info "binaries are already $RELEASE; only the feature compatibility version step remains"
-elif [[ "$binary_minor" != "$expected_major" ]]; then
-  die "MongoDB binaries are $mongo_version; expected $expected_major.x or $RELEASE.x before FCV $RELEASE"
+if [[ "$binary_minor" != "$expected_major" ]]; then
+  die "run this preflight while MongoDB $expected_major.x is still serving, before deploying $RELEASE (running $mongo_version)"
 fi
 
 "${DOCKER_BIN:-docker}" exec "$container" sh -lc 'command -v mongodump >/dev/null' ||

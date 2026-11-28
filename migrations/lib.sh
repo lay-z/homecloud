@@ -62,6 +62,54 @@ compose_config_has() {
     die "$SERVICE/compose.yaml must contain '$needle' before this migration runs"
 }
 
+compose_service_config_has() {
+  local service_name="$1" needle="$2" file="$STACK_ROOT/$SERVICE/compose.yaml"
+  awk -v wanted="$service_name" -v needle="$needle" '
+    /^  [^[:space:]].*:/ {
+      current = $1
+      sub(/:$/, "", current)
+    }
+    current == wanted && index($0, needle) > 0 { found = 1 }
+    END { exit !found }
+  ' "$file" ||
+    die "$SERVICE/compose.yaml service $service_name must mount $needle before this migration runs"
+}
+
+cidrs_include_ips() {
+  local cidrs="$1"
+  shift
+  require_tool python3
+  python3 - "$cidrs" "$@" <<'PY'
+import ipaddress
+import re
+import sys
+
+raw = sys.argv[1]
+try:
+    networks = [
+        ipaddress.ip_network(value, strict=False)
+        for value in re.split(r"[\s,]+", raw.strip())
+        if value
+    ]
+except ValueError as error:
+    print(f"invalid trusted proxy CIDR: {error}", file=sys.stderr)
+    sys.exit(2)
+
+if not networks:
+    print("trusted proxy CIDR list is empty", file=sys.stderr)
+    sys.exit(2)
+
+try:
+    addresses = [ipaddress.ip_address(value) for value in sys.argv[2:]]
+except ValueError as error:
+    print(f"invalid proxy source address: {error}", file=sys.stderr)
+    sys.exit(2)
+
+if any(not any(address in network for network in networks) for address in addresses):
+    sys.exit(1)
+PY
+}
+
 wait_http() {
   local url="$1" tries="${2:-30}" delay="${3:-2}" i
   for ((i = 1; i <= tries; i++)); do

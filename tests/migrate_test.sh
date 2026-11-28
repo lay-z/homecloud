@@ -3,6 +3,10 @@ set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
+assert_not_file() {
+  [[ ! -e "$1" ]] || fail "unexpected file: $1"
+}
+
 repo="$TMP/repo"
 make_repo "$repo"
 mkdir -p "$repo/tools"
@@ -50,15 +54,14 @@ chmod +x "$manifest"/fake/*.sh
 
 cat > "$manifest/manifest.tsv" <<'TSV'
 # id	service	release	kind	needs_stop	backup	min_free_mb	script	description
+fake-confirm	jellyfin	1.0.0	post	no	no	0	fake/confirm.sh	Requires confirmation
 fake-pre	jellyfin	1.0.0	preflight	no	no	0	fake/preflight.sh	Read only check
 fake-window	jellyfin	1.0.0	window	yes	no	0	fake/window.sh	Needs the service stopped
 fake-fail	jellyfin	1.0.0	post	no	no	0	fake/fail.sh	Always fails
-fake-confirm	jellyfin	1.0.0	post	no	no	0	fake/confirm.sh	Requires confirmation
 fake-disabled	immich	1.0.0	preflight	no	no	0	fake/preflight.sh	Service is not enabled
 TSV
 
 export MIGRATIONS_DIR="$manifest"
-export BACKUP_ROOT="$TMP/backups"
 export RECORD="$TMP/record"
 : > "$RECORD"
 
@@ -68,6 +71,36 @@ list="$("$repo/stack" migrate list)"
 
 if "$repo/stack" migrate run does-not-exist --yes >/dev/null 2>&1; then
   fail "migrate accepted an unknown migration"
+fi
+
+if BACKUP_ROOT="$TMP/not-mounted/backups" \
+  "$repo/stack" migrate run fake-confirm --yes >"$TMP/backup-missing.err" 2>&1; then
+  fail "migrate accepted a missing configured BACKUP_ROOT"
+fi
+assert_contains "$TMP/backup-missing.err" "BACKUP_ROOT must already exist"
+assert_not_file "$TMP/not-mounted"
+
+mkdir -p "$TMP/same-filesystem-backups"
+if BACKUP_ROOT="$TMP/same-filesystem-backups" \
+  "$repo/stack" migrate run fake-confirm --yes >"$TMP/backup-device.err" 2>&1; then
+  fail "migrate accepted an explicit BACKUP_ROOT on the DATA_ROOT filesystem"
+fi
+assert_contains "$TMP/backup-device.err" "different filesystem"
+
+if "$repo/stack" migrate run fake-confirm </dev/null >/dev/null 2>&1; then
+  fail "migrate ran without confirmation on a non-interactive stdin"
+fi
+assert_not_file "$TMP/data/.migrations/fake-confirm"
+"$repo/stack" migrate run fake-confirm --yes >/dev/null
+assert_file "$TMP/data/.migrations/fake-confirm"
+assert_contains "$RECORD" "confirm"
+
+if "$repo/stack" migrate run fake-window --yes >"$TMP/order.err" 2>&1; then
+  fail "migrate ran a step before its earlier same-service steps"
+fi
+assert_contains "$TMP/order.err" "completed first"
+if grep -Fq ' stop' "$DOCKER_LOG"; then
+  fail "migrate stopped the service before rejecting an out-of-order step"
 fi
 
 "$repo/stack" migrate run fake-pre --yes >/dev/null
@@ -84,7 +117,7 @@ assert_contains "$RECORD" "window"
 assert_contains "$DOCKER_LOG" " stop"
 assert_contains "$DOCKER_LOG" " up -d"
 
-bakdir="$(find "$TMP/backups" -mindepth 1 -maxdepth 1 -type d -name '*-fake-window' | head -n1)"
+bakdir="$(find "$TMP/data/backups" -mindepth 1 -maxdepth 1 -type d -name '*-fake-window' | head -n1)"
 assert_file "$bakdir/fixture.tar.gz"
 assert_contains "$bakdir/SHA256SUMS" "fixture.tar.gz"
 [[ "$(tar -xzOf "$bakdir/fixture.tar.gz" file.txt)" == "fixture" ]] ||
@@ -107,15 +140,6 @@ force_record_before="$(grep -c preflight "$RECORD")"
 "$repo/stack" migrate run fake-pre --force --yes >/dev/null
 force_record_after="$(grep -c preflight "$RECORD")"
 [[ "$force_record_after" -gt "$force_record_before" ]] || fail "--force did not rerun a completed migration"
-
-assert_not_file() {
-  [[ ! -e "$1" ]] || fail "unexpected file: $1"
-}
-
-if "$repo/stack" migrate run fake-confirm </dev/null >/dev/null 2>&1; then
-  fail "migrate ran without confirmation on a non-interactive stdin"
-fi
-assert_not_file "$TMP/data/.migrations/fake-confirm"
 
 "$repo/stack" migrate validate >/dev/null
 "$repo/stack" migrate plan >/dev/null

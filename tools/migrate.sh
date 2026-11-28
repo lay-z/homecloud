@@ -110,6 +110,26 @@ split_row() {
   IFS=$'\t' read -r MIGRATION_ID SERVICE RELEASE KIND NEEDS_STOP BACKUP MIN_FREE SCRIPT DESCRIPTION <<< "$row"
 }
 
+require_prior_steps_done() {
+  local wanted_id="$1" wanted_service="$2" row prior_id prior_service found=0
+
+  while IFS= read -r row; do
+    [[ -n "$row" ]] || continue
+    split_row "$row"
+    prior_id="$MIGRATION_ID"
+    prior_service="$SERVICE"
+    if [[ "$prior_id" == "$wanted_id" ]]; then
+      found=1
+      break
+    fi
+    if [[ "$prior_service" == "$wanted_service" && ! -f "$(journal_path "$prior_id")" ]]; then
+      die "$wanted_id requires earlier migration $prior_id to be completed first"
+    fi
+  done <<< "$(manifest_rows)"
+
+  (( found )) || die "migration $wanted_id is not in the manifest"
+}
+
 journal_path() {
   printf '%s/.migrations/%s' "${DATA_ROOT:-}" "$1"
 }
@@ -253,7 +273,8 @@ cmd_status() {
 
 cmd_run() {
   local id="" assume_yes=0 force=0 row script_path stamp log backup_dir
-  local required script_hash recorded_hash
+  local required script_hash recorded_hash backup_device data_device
+  local backup_mount root_mount data_mount
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -276,6 +297,7 @@ cmd_run() {
 
   service_enabled "$SERVICE" || die "$SERVICE is not enabled in ENABLED_SERVICES"
   [[ -d "$ROOT/$SERVICE" ]] || die "unknown service: $SERVICE"
+  require_prior_steps_done "$MIGRATION_ID" "$SERVICE"
 
   script_path="$MIGRATIONS_DIR/$SCRIPT"
   [[ -f "$script_path" ]] || die "missing migration script: $SCRIPT"
@@ -297,8 +319,31 @@ cmd_run() {
   fi
 
   required="${MIGRATE_MIN_FREE_MB:-$MIN_FREE}"
-  BACKUP_ROOT="${BACKUP_ROOT:-$DATA_ROOT/backups}"
-  mkdir -p "$BACKUP_ROOT"
+  if [[ -n "${BACKUP_ROOT:-}" ]]; then
+    [[ -d "$BACKUP_ROOT" ]] ||
+      die "configured BACKUP_ROOT must already exist; verify the backup filesystem is mounted: $BACKUP_ROOT"
+    [[ -d "$DATA_ROOT" ]] || die "missing DATA_ROOT directory: $DATA_ROOT"
+    command -v findmnt >/dev/null 2>&1 || die "findmnt is required to verify configured BACKUP_ROOT"
+    backup_mount="$(findmnt --target "$BACKUP_ROOT" --noheadings --output TARGET)" ||
+      die "could not determine the mount for BACKUP_ROOT"
+    root_mount="$(findmnt --target / --noheadings --output TARGET)" ||
+      die "could not determine the root filesystem mount"
+    data_mount="$(findmnt --target "$DATA_ROOT" --noheadings --output TARGET)" ||
+      die "could not determine the mount for DATA_ROOT"
+    [[ "$backup_mount" != "$root_mount" ]] ||
+      die "configured BACKUP_ROOT resolves to the root filesystem; verify the backup disk is mounted"
+    [[ "$backup_mount" != "$data_mount" ]] ||
+      die "configured BACKUP_ROOT must be on a different filesystem from DATA_ROOT"
+    backup_device="$(stat -c %d -- "$BACKUP_ROOT")" ||
+      die "could not determine the filesystem for BACKUP_ROOT"
+    data_device="$(stat -c %d -- "$DATA_ROOT")" ||
+      die "could not determine the filesystem for DATA_ROOT"
+    [[ "$backup_device" != "$data_device" ]] ||
+      die "configured BACKUP_ROOT must be on a different filesystem from DATA_ROOT"
+  else
+    BACKUP_ROOT="$DATA_ROOT/backups"
+    mkdir -p "$BACKUP_ROOT"
+  fi
   require_free_mb "$DATA_ROOT" "$required"
   require_free_mb "$BACKUP_ROOT" "$required"
 

@@ -28,6 +28,7 @@ jobs:
           ./tests/init_services_test.sh
           ./tests/migrate_volume_test.sh
           ./tests/migrate_test.sh
+          ./tests/migration_safety_test.sh
           ./tests/systemd_units_test.sh
 
       - name: Compose render tests

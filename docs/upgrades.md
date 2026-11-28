@@ -74,8 +74,13 @@ git switch -c chore/<step>
 # run the tests
 git commit
 git push
-# PR, CI, merge, tag, then on the server:
-./stack update
+# PR, CI, merge, and tag. On the server, check out the release tag without
+# deploying it; run that step's preflight while the previous image is serving.
+git fetch --tags
+git checkout <release-tag>
+./stack migrate run <preflight-id> --yes
+# For Authentik and MongoDB, deploy only after the preflight passes:
+./stack update --version <release-tag>
 ```
 
 **Data half** — a recorded migration, run in the maintenance window:
@@ -89,7 +94,8 @@ git push
 
 `./stack migrate run` performs the same sequence every time:
 
-1. checks the service is enabled and the migration is not already recorded;
+1. checks the service is enabled and all earlier same-service manifest steps
+   are recorded;
 2. checks free space on `DATA_ROOT` and `BACKUP_ROOT`;
 3. requires `--yes` (or the migration id typed at a terminal);
 4. stops the service when the manifest says it needs a stop;
@@ -100,19 +106,20 @@ git push
 If a script fails, the service is restarted on whatever is currently pinned,
 the journal entry is **not** written, and the exit status is non-zero.
 
-`./stack update` checks out the tag **and** restarts the stack, so after the
-release half the new image is already serving. Every preflight therefore checks
-the data state, not the image version, and may run before or after the deploy.
-Preflights are skipped automatically once their id is journalled, so a re-run is
-still a no-op.
+`./stack update` checks out the tag **and** restarts the stack. Run each
+preflight first, with the target tag checked out but the previous image still
+serving. This ensures checks that protect an application startup—such as
+Authentik's duplicate-group check—run before the target image can migrate the
+database. The runner refuses to execute a step until all earlier rows for that
+service have been journalled. Re-running any recorded id is a no-op.
 
-The exception is a step whose data work must happen **before** the new image
-starts. Jellyfin 12 is the only one today: check the tag out without deploying,
-run the step, and let the runner start the new image itself.
+Jellyfin 12 is the exception to deploying after preflight: its data work must
+happen **before** the new image starts. Check the tag out without deploying,
+run preflight and the offline migration, and let the runner start the new image.
 
 ```bash
 git fetch --tags
-git checkout v0.5.0        # no ./stack up yet
+git checkout v0.5.0        # no ./stack update yet
 ./stack migrate run jellyfin-12-preflight --yes
 ./stack migrate run jellyfin-12-migrate --yes   # stops 10.11, migrates offline, starts 12
 ./stack migrate run jellyfin-12-verify --yes
@@ -142,13 +149,16 @@ CI and before every release that adds a migration.
 
 ### Backups
 
-Set `BACKUP_ROOT` in `.env` to a filesystem with room for a full copy:
+Set `BACKUP_ROOT` in `.env` to an existing directory on a mounted filesystem
+with room for a full copy. The runner rejects a missing configured path and an
+explicit path resolving to `/` or the same filesystem as `DATA_ROOT`; this
+prevents a missing disk mount from silently sending archives to the root disk.
 
 ```bash
 BACKUP_ROOT=/mnt/seagate/backups
 ```
 
-The default is `${DATA_ROOT}/backups`, which is usually the small root disk.
+The default is `${DATA_ROOT}/backups`, which may be on the root disk.
 Each run gets `${BACKUP_ROOT}/<timestamp>-<id>/` with its own `SHA256SUMS`.
 Keep the archive until the service has been stable for an agreed period.
 
@@ -191,16 +201,21 @@ Breakages to account for, from upstream release notes:
   deprecated.
 - **2026.8**: forwarded headers are only honoured from trusted proxy networks.
   The defaults cover loopback and RFC1918, which is what Traefik uses here. If
-  `AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS` is set explicitly, it must include the
-  Traefik source network.
+  `AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS` is set explicitly, it must contain
+  `127.0.0.1` and the gateway address of Authentik's Docker network. The
+  preflight parses the CIDRs and checks both addresses.
 
-Commands, once each release is deployed:
+For every Authentik hop, check out the tag carrying that hop's pin change,
+preflight while the previous image is still running, and only then deploy it.
+After deployment, run the data step(s) in manifest order:
 
 ```bash
+# Before deploying the 2025.12 tag:
 ./stack migrate run authentik-2025.12-preflight --yes
+./stack update --version <authentik-2025.12-tag>
 ./stack migrate run authentik-2025.12-storage --yes
 ./stack migrate run authentik-2025.12-verify --yes
-# repeat for 2026.2, 2026.5, and 2026.8
+# Repeat: preflight the next tag before deploying it, then run its verify step.
 ./stack migrate run authentik-2026.8-analyze --yes
 ```
 
@@ -271,9 +286,11 @@ the Checkmate logs and uptime history.
 
 ```bash
 ./stack migrate run checkmate-mongo-8.3-preflight --yes
+./stack update --version <mongo-8.3-tag>
 ./stack migrate run checkmate-mongo-8.3 --yes
 # after an observation period
 ./stack migrate run checkmate-mongo-9.0-preflight --yes
+./stack update --version <mongo-9.0-tag>
 ./stack migrate run checkmate-mongo-9.0 --yes
 ```
 

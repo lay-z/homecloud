@@ -32,19 +32,11 @@ esac
 # already serving when we get here. Re-running the checks against it is
 # harmless and keeps the duplicate-name guard alive.
 current_minor="${current%.*}"
-release_minor="${RELEASE%.*}"
 
-if [[ "$current_minor" == "$release_minor" ]]; then
-  info "$current already serves $RELEASE; checking the state the migration needs"
-elif [[ "$current_minor" == "$previous" ]]; then
+if [[ "$current_minor" == "$previous" ]]; then
   info "sequential step $previous -> $RELEASE confirmed"
 else
-  newest="$(printf '%s\n%s\n' "$current_minor" "$release_minor" | sort -V | tail -n1)"
-  if [[ "$newest" == "$current_minor" ]]; then
-    info "already at $current, which is newer than $RELEASE; nothing to do"
-    exit 0
-  fi
-  die "authentik upgrades are sequential: run the $previous step before $RELEASE (currently $current)"
+  die "run this preflight while Authentik $previous is still serving, before deploying $RELEASE (currently $current)"
 fi
 
 [[ -n "$(service_env AUTHENTIK_SECRET_KEY)" ]] ||
@@ -75,15 +67,28 @@ else
 fi
 
 if [[ "$RELEASE" == 2025.12.* ]]; then
-  compose_config_has 'authentik/data:/data'
+  compose_service_config_has server 'authentik/data:/data'
+  compose_service_config_has worker 'authentik/data:/data'
 fi
 
 if [[ "$RELEASE" == 2026.8.* ]]; then
   cidrs="$(service_env AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS)"
   if [[ -n "$cidrs" ]]; then
     info "explicit trusted proxy CIDRs: $cidrs"
-    [[ "$cidrs" == *"127."* || "$cidrs" == *"172.16"* || "$cidrs" == *"10."* || "$cidrs" == *"192.168."* ]] ||
-      die "AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS does not cover the Traefik source address"
+
+    gateway_output="$("${DOCKER_BIN:-docker}" inspect "$container" \
+      --format '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}' 2>/dev/null)" ||
+      die "could not inspect the Authentik network to determine Traefik's source address"
+    read -r -a gateways <<< "$gateway_output"
+    proxy_ips=(127.0.0.1)
+    for gateway in "${gateways[@]}"; do
+      [[ -n "$gateway" ]] && proxy_ips+=("$gateway")
+    done
+    (( ${#proxy_ips[@]} > 1 )) ||
+      die "could not determine an Authentik Docker network gateway for the proxy check"
+
+    cidrs_include_ips "$cidrs" "${proxy_ips[@]}" ||
+      die "AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS must contain both 127.0.0.1 and the Authentik network gateway (${proxy_ips[*]:1})"
   else
     info "no explicit trusted proxy CIDRs; the defaults cover loopback and RFC1918"
   fi
